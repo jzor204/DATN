@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #122033;
+  background:
+    radial-gradient(circle at top left, rgba(232, 123, 98, 0.22), transparent 28%),
+    radial-gradient(circle at top right, rgba(47, 127, 141, 0.18), transparent 26%),
+    linear-gradient(180deg, #fbf7f0 0%, #f2e6d5 100%);
+  font-family: "Segoe UI Variable Text", Aptos, "Segoe UI", Tahoma, sans-serif;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  background: transparent;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: Georgia, "Times New Roman", serif;
+  letter-spacing: -0.02em;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.glass-panel {
+  background: rgba(255, 252, 247, 0.88);
+  backdrop-filter: blur(14px);
+}
