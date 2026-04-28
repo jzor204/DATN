@@ -1,6 +1,6 @@
 // @title Task Management API
 // @version 1.0
-// @description RESTful API cho hệ thống Task Management
+// @description RESTful API cho há»‡ thá»‘ng Task Management
 // @host localhost:8080
 // @BasePath /api/v1
 // @schemes http
@@ -11,10 +11,12 @@ package main
 
 import (
 	"log"
+
 	docs "task-management/docs"
 	deliveryhttp "task-management/internal/delivery/http"
 	"task-management/internal/delivery/http/handler"
 	"task-management/internal/delivery/http/middleware"
+	"task-management/internal/delivery/http/realtime"
 	"task-management/internal/repository"
 	"task-management/internal/usecase"
 	"task-management/pkg/cache"
@@ -25,12 +27,14 @@ import (
 
 func main() {
 	cfg := config.Load()
+
 	docs.SwaggerInfo.Title = "Task Management API"
-	docs.SwaggerInfo.Description = "RESTful API cho hệ thống Task Management"
+	docs.SwaggerInfo.Description = "RESTful API cho há»‡ thá»‘ng Task Management"
 	docs.SwaggerInfo.Version = "1.0"
 	docs.SwaggerInfo.Host = "localhost:" + cfg.AppPort
 	docs.SwaggerInfo.BasePath = "/api/v1"
 	docs.SwaggerInfo.Schemes = []string{"http"}
+
 	db, err := database.NewMySQL(cfg)
 	if err != nil {
 		log.Fatalf("failed to connect mysql: %v", err)
@@ -42,6 +46,7 @@ func main() {
 	}
 
 	cacheService := cache.New(redisClient)
+	realtimeHub := realtime.NewHub()
 
 	userRepo := repository.NewUserRepository(db)
 	projectRepo := repository.NewProjectRepository(db)
@@ -80,15 +85,17 @@ func main() {
 	)
 
 	authHandler := handler.NewAuthHandler(authUsecase)
-	projectHandler := handler.NewProjectHandler(projectUsecase)
-	taskHandler := handler.NewTaskHandler(taskUsecase)
-	commentHandler := handler.NewCommentHandler(commentUsecase)
+	projectHandler := handler.NewProjectHandler(projectUsecase, realtimeHub)
+	taskHandler := handler.NewTaskHandler(taskUsecase, realtimeHub)
+	commentHandler := handler.NewCommentHandler(commentUsecase, taskUsecase, realtimeHub)
+	wsHandler := handler.NewWebSocketHandler(realtimeHub, jwtService, projectUsecase, taskUsecase)
 
 	app := deliveryhttp.NewRouter(
 		authHandler,
 		projectHandler,
 		taskHandler,
 		commentHandler,
+		wsHandler,
 		middleware.AuthMiddleware(jwtService),
 	)
 

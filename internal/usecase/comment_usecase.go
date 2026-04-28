@@ -45,6 +45,35 @@ func NewCommentUsecase(
 	}
 }
 
+func (uc *CommentUsecase) GetByID(
+	ctx context.Context,
+	actorID uint,
+	globalRole string,
+	commentID uint,
+) (*CommentOutput, error) {
+	comment, err := uc.commentRepo.GetByID(ctx, commentID)
+	if err != nil {
+		return nil, err
+	}
+	if comment == nil {
+		return nil, errors.New("comment not found")
+	}
+
+	task, err := uc.taskRepo.GetByID(ctx, comment.TaskID)
+	if err != nil {
+		return nil, err
+	}
+	if task == nil {
+		return nil, errors.New("task not found")
+	}
+
+	if err := uc.accessService.CanViewProject(ctx, task.ProjectID, actorID, globalRole); err != nil {
+		return nil, err
+	}
+
+	return toCommentOutput(comment), nil
+}
+
 func (uc *CommentUsecase) ListByTask(
 	ctx context.Context,
 	actorID uint,

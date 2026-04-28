@@ -8,6 +8,7 @@ import LoadingScreen from "../components/LoadingScreen";
 import Pagination from "../components/Pagination";
 import SectionCard from "../components/SectionCard";
 import StatusBadge from "../components/StatusBadge";
+import { useRealtimeSubscription } from "../hooks/useRealtimeSubscription";
 import {
   formatDate,
   formatRoleLabel,
@@ -131,6 +132,64 @@ export default function TaskDetailPage({ currentUser, taskId }) {
       assignee_id: taskPayload.assignee_id ? String(taskPayload.assignee_id) : ""
     });
   }
+
+  useRealtimeSubscription({
+    enabled: Boolean(project?.id),
+    scope: "project",
+    projectId: project?.id,
+    currentUserId: currentUser.id,
+    onEvent: async (event) => {
+      if (!event.type || !event.type.startsWith("project.")) {
+        return;
+      }
+
+      if (event.type === "project.deleted") {
+        navigateTo("/projects", { replace: true });
+        return;
+      }
+
+      try {
+        await reloadTaskWorkspace(commentPage);
+        setEditingCommentId(null);
+        setEditingContent("");
+      } catch (err) {
+        setPageError(err.message);
+
+        if (err.status === 403 || err.status === 404) {
+          navigateTo("/projects", { replace: true });
+        }
+      }
+    }
+  });
+
+  useRealtimeSubscription({
+    enabled: Boolean(taskId),
+    scope: "task",
+    taskId,
+    currentUserId: currentUser.id,
+    onEvent: async (event) => {
+      if (!event.type) {
+        return;
+      }
+
+      if (event.type === "task.deleted") {
+        navigateTo(task?.project_id ? `/projects/${task.project_id}` : "/projects", { replace: true });
+        return;
+      }
+
+      try {
+        await reloadTaskWorkspace(commentPage);
+        setEditingCommentId(null);
+        setEditingContent("");
+      } catch (err) {
+        setPageError(err.message);
+
+        if (err.status === 403 || err.status === 404) {
+          navigateTo("/projects", { replace: true });
+        }
+      }
+    }
+  });
 
   async function handleUpdateTask(event) {
     event.preventDefault();

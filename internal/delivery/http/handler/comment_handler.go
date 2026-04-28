@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"task-management/internal/delivery/http/realtime"
 	"task-management/internal/dto"
 	"task-management/internal/usecase"
 	"task-management/pkg/utils"
@@ -10,29 +11,22 @@ import (
 
 type CommentHandler struct {
 	commentUsecase *usecase.CommentUsecase
+	taskUsecase    *usecase.TaskUsecase
+	realtimeHub    *realtime.Hub
 }
 
-func NewCommentHandler(commentUsecase *usecase.CommentUsecase) *CommentHandler {
+func NewCommentHandler(
+	commentUsecase *usecase.CommentUsecase,
+	taskUsecase *usecase.TaskUsecase,
+	realtimeHub *realtime.Hub,
+) *CommentHandler {
 	return &CommentHandler{
 		commentUsecase: commentUsecase,
+		taskUsecase:    taskUsecase,
+		realtimeHub:    realtimeHub,
 	}
 }
 
-// ListByTask godoc
-// @Summary List comments by task
-// @Description Lấy danh sách comment theo task
-// @Tags Comments
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param id path int true "Task ID"
-// @Param page query int false "Page number"
-// @Param page_size query int false "Page size"
-// @Success 200 {object} dto.CommentListSuccessResponse
-// @Failure 401 {object} dto.ErrorResponse
-// @Failure 403 {object} dto.ErrorResponse
-// @Failure 404 {object} dto.ErrorResponse
-// @Router /tasks/{id}/comments [get]
 func (h *CommentHandler) ListByTask(c *fiber.Ctx) error {
 	userID, globalRole, err := getAuthContext(c)
 	if err != nil {
@@ -69,21 +63,6 @@ func (h *CommentHandler) ListByTask(c *fiber.Ctx) error {
 	})
 }
 
-// Create godoc
-// @Summary Create comment
-// @Description Tạo comment cho task
-// @Tags Comments
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param id path int true "Task ID"
-// @Param request body dto.CreateCommentRequest true "Create comment request"
-// @Success 201 {object} dto.CommentSuccessResponse
-// @Failure 400 {object} dto.ErrorResponse
-// @Failure 401 {object} dto.ErrorResponse
-// @Failure 403 {object} dto.ErrorResponse
-// @Failure 404 {object} dto.ErrorResponse
-// @Router /tasks/{id}/comments [post]
 func (h *CommentHandler) Create(c *fiber.Ctx) error {
 	userID, globalRole, err := getAuthContext(c)
 	if err != nil {
@@ -113,24 +92,16 @@ func (h *CommentHandler) Create(c *fiber.Ctx) error {
 		return utils.Error(c, projectErrorStatus(err), "create comment failed", err.Error())
 	}
 
+	projectID := uint(0)
+	if task, taskErr := h.taskUsecase.GetByID(c.UserContext(), userID, globalRole, result.TaskID); taskErr == nil && task != nil {
+		projectID = task.ProjectID
+	}
+
+	h.broadcastCommentEvent("comment.created", projectID, result.TaskID, userID)
+
 	return utils.Success(c, fiber.StatusCreated, "create comment success", result)
 }
 
-// Update godoc
-// @Summary Update comment
-// @Description Cập nhật comment
-// @Tags Comments
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param id path int true "Comment ID"
-// @Param request body dto.UpdateCommentRequest true "Update comment request"
-// @Success 200 {object} dto.CommentSuccessResponse
-// @Failure 400 {object} dto.ErrorResponse
-// @Failure 401 {object} dto.ErrorResponse
-// @Failure 403 {object} dto.ErrorResponse
-// @Failure 404 {object} dto.ErrorResponse
-// @Router /comments/{id} [put]
 func (h *CommentHandler) Update(c *fiber.Ctx) error {
 	userID, globalRole, err := getAuthContext(c)
 	if err != nil {
@@ -160,22 +131,16 @@ func (h *CommentHandler) Update(c *fiber.Ctx) error {
 		return utils.Error(c, projectErrorStatus(err), "update comment failed", err.Error())
 	}
 
+	projectID := uint(0)
+	if task, taskErr := h.taskUsecase.GetByID(c.UserContext(), userID, globalRole, result.TaskID); taskErr == nil && task != nil {
+		projectID = task.ProjectID
+	}
+
+	h.broadcastCommentEvent("comment.updated", projectID, result.TaskID, userID)
+
 	return utils.Success(c, fiber.StatusOK, "update comment success", result)
 }
 
-// Delete godoc
-// @Summary Delete comment
-// @Description Xóa comment
-// @Tags Comments
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param id path int true "Comment ID"
-// @Success 200 {object} dto.SimpleSuccessResponse
-// @Failure 401 {object} dto.ErrorResponse
-// @Failure 403 {object} dto.ErrorResponse
-// @Failure 404 {object} dto.ErrorResponse
-// @Router /comments/{id} [delete]
 func (h *CommentHandler) Delete(c *fiber.Ctx) error {
 	userID, globalRole, err := getAuthContext(c)
 	if err != nil {
@@ -187,6 +152,16 @@ func (h *CommentHandler) Delete(c *fiber.Ctx) error {
 		return utils.Error(c, fiber.StatusBadRequest, "invalid comment id", err.Error())
 	}
 
+	comment, err := h.commentUsecase.GetByID(c.UserContext(), userID, globalRole, commentID)
+	if err != nil {
+		return utils.Error(c, projectErrorStatus(err), "delete comment failed", err.Error())
+	}
+
+	projectID := uint(0)
+	if task, taskErr := h.taskUsecase.GetByID(c.UserContext(), userID, globalRole, comment.TaskID); taskErr == nil && task != nil {
+		projectID = task.ProjectID
+	}
+
 	if err := h.commentUsecase.Delete(
 		c.UserContext(),
 		userID,
@@ -196,5 +171,16 @@ func (h *CommentHandler) Delete(c *fiber.Ctx) error {
 		return utils.Error(c, projectErrorStatus(err), "delete comment failed", err.Error())
 	}
 
+	h.broadcastCommentEvent("comment.deleted", projectID, comment.TaskID, userID)
+
 	return utils.Success(c, fiber.StatusOK, "delete comment success", nil)
+}
+
+func (h *CommentHandler) broadcastCommentEvent(eventType string, projectID uint, taskID uint, triggeredBy uint) {
+	if h.realtimeHub == nil {
+		return
+	}
+
+	event := realtime.NewEvent(eventType, "task", projectID, taskID, triggeredBy)
+	h.realtimeHub.Broadcast(event, realtime.TaskRoom(taskID))
 }

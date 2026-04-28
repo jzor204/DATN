@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"task-management/internal/delivery/http/realtime"
 	"task-management/internal/dto"
 	"task-management/internal/usecase"
 	"task-management/pkg/utils"
@@ -14,26 +15,16 @@ import (
 
 type ProjectHandler struct {
 	projectUsecase *usecase.ProjectUsecase
+	realtimeHub    *realtime.Hub
 }
 
-func NewProjectHandler(projectUsecase *usecase.ProjectUsecase) *ProjectHandler {
+func NewProjectHandler(projectUsecase *usecase.ProjectUsecase, realtimeHub *realtime.Hub) *ProjectHandler {
 	return &ProjectHandler{
 		projectUsecase: projectUsecase,
+		realtimeHub:    realtimeHub,
 	}
 }
 
-// Create godoc
-// @Summary Create project
-// @Description Tạo project mới
-// @Tags Projects
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param request body dto.CreateProjectRequest true "Create project request"
-// @Success 201 {object} dto.ProjectSuccessResponse
-// @Failure 400 {object} dto.ErrorResponse
-// @Failure 401 {object} dto.ErrorResponse
-// @Router /projects [post]
 func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 	userID, _, err := getAuthContext(c)
 	if err != nil {
@@ -53,21 +44,11 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) error {
 		return utils.Error(c, projectErrorStatus(err), "create project failed", err.Error())
 	}
 
+	h.broadcastProjectEvent("project.created", result.ID, userID)
+
 	return utils.Success(c, fiber.StatusCreated, "create project success", result)
 }
 
-// List godoc
-// @Summary List projects
-// @Description Lấy danh sách project
-// @Tags Projects
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param page query int false "Page number"
-// @Param page_size query int false "Page size"
-// @Success 200 {object} dto.ProjectListSuccessResponse
-// @Failure 401 {object} dto.ErrorResponse
-// @Router /projects [get]
 func (h *ProjectHandler) List(c *fiber.Ctx) error {
 	userID, globalRole, err := getAuthContext(c)
 	if err != nil {
@@ -92,19 +73,6 @@ func (h *ProjectHandler) List(c *fiber.Ctx) error {
 	})
 }
 
-// GetByID godoc
-// @Summary Get project detail
-// @Description Lấy chi tiết project
-// @Tags Projects
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param id path int true "Project ID"
-// @Success 200 {object} dto.ProjectSuccessResponse
-// @Failure 401 {object} dto.ErrorResponse
-// @Failure 403 {object} dto.ErrorResponse
-// @Failure 404 {object} dto.ErrorResponse
-// @Router /projects/{id} [get]
 func (h *ProjectHandler) GetByID(c *fiber.Ctx) error {
 	userID, globalRole, err := getAuthContext(c)
 	if err != nil {
@@ -124,21 +92,6 @@ func (h *ProjectHandler) GetByID(c *fiber.Ctx) error {
 	return utils.Success(c, fiber.StatusOK, "get project success", result)
 }
 
-// Update godoc
-// @Summary Update project
-// @Description Cập nhật project
-// @Tags Projects
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param id path int true "Project ID"
-// @Param request body dto.UpdateProjectRequest true "Update project request"
-// @Success 200 {object} dto.ProjectSuccessResponse
-// @Failure 400 {object} dto.ErrorResponse
-// @Failure 401 {object} dto.ErrorResponse
-// @Failure 403 {object} dto.ErrorResponse
-// @Failure 404 {object} dto.ErrorResponse
-// @Router /projects/{id} [put]
 func (h *ProjectHandler) Update(c *fiber.Ctx) error {
 	userID, globalRole, err := getAuthContext(c)
 	if err != nil {
@@ -163,22 +116,11 @@ func (h *ProjectHandler) Update(c *fiber.Ctx) error {
 		return utils.Error(c, projectErrorStatus(err), "update project failed", err.Error())
 	}
 
+	h.broadcastProjectEvent("project.updated", result.ID, userID)
+
 	return utils.Success(c, fiber.StatusOK, "update project success", result)
 }
 
-// Delete godoc
-// @Summary Delete project
-// @Description Xóa project
-// @Tags Projects
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param id path int true "Project ID"
-// @Success 200 {object} dto.SimpleSuccessResponse
-// @Failure 401 {object} dto.ErrorResponse
-// @Failure 403 {object} dto.ErrorResponse
-// @Failure 404 {object} dto.ErrorResponse
-// @Router /projects/{id} [delete]
 func (h *ProjectHandler) Delete(c *fiber.Ctx) error {
 	userID, globalRole, err := getAuthContext(c)
 	if err != nil {
@@ -194,24 +136,11 @@ func (h *ProjectHandler) Delete(c *fiber.Ctx) error {
 		return utils.Error(c, projectErrorStatus(err), "delete project failed", err.Error())
 	}
 
+	h.broadcastProjectEvent("project.deleted", projectID, userID)
+
 	return utils.Success(c, fiber.StatusOK, "delete project success", nil)
 }
 
-// ListMembers godoc
-// @Summary List project members
-// @Description Lấy danh sách thành viên trong project
-// @Tags Project Members
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param id path int true "Project ID"
-// @Param page query int false "Page number"
-// @Param page_size query int false "Page size"
-// @Success 200 {object} dto.ProjectMemberListSuccessResponse
-// @Failure 401 {object} dto.ErrorResponse
-// @Failure 403 {object} dto.ErrorResponse
-// @Failure 404 {object} dto.ErrorResponse
-// @Router /projects/{id}/members [get]
 func (h *ProjectHandler) ListMembers(c *fiber.Ctx) error {
 	userID, globalRole, err := getAuthContext(c)
 	if err != nil {
@@ -241,20 +170,6 @@ func (h *ProjectHandler) ListMembers(c *fiber.Ctx) error {
 	})
 }
 
-// @Summary Add project member
-// @Description Thêm thành viên vào project
-// @Tags Project Members
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param id path int true "Project ID"
-// @Param request body dto.AddProjectMemberRequest true "Add project member request"
-// @Success 201 {object} dto.ProjectMemberSuccessResponse
-// @Failure 400 {object} dto.ErrorResponse
-// @Failure 401 {object} dto.ErrorResponse
-// @Failure 403 {object} dto.ErrorResponse
-// @Failure 404 {object} dto.ErrorResponse
-// @Router /projects/{id}/members [post]
 func (h *ProjectHandler) AddMember(c *fiber.Ctx) error {
 	userID, globalRole, err := getAuthContext(c)
 	if err != nil {
@@ -279,23 +194,11 @@ func (h *ProjectHandler) AddMember(c *fiber.Ctx) error {
 		return utils.Error(c, projectErrorStatus(err), "add project member failed", err.Error())
 	}
 
+	h.broadcastProjectEvent("project.members.changed", projectID, userID)
+
 	return utils.Success(c, fiber.StatusCreated, "add project member success", result)
 }
 
-// RemoveMember godoc
-// @Summary Remove project member
-// @Description Xóa thành viên khỏi project
-// @Tags Project Members
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param id path int true "Project ID"
-// @Param userId path int true "User ID"
-// @Success 200 {object} dto.SimpleSuccessResponse
-// @Failure 401 {object} dto.ErrorResponse
-// @Failure 403 {object} dto.ErrorResponse
-// @Failure 404 {object} dto.ErrorResponse
-// @Router /projects/{id}/members/{userId} [delete]
 func (h *ProjectHandler) RemoveMember(c *fiber.Ctx) error {
 	userID, globalRole, err := getAuthContext(c)
 	if err != nil {
@@ -316,7 +219,18 @@ func (h *ProjectHandler) RemoveMember(c *fiber.Ctx) error {
 		return utils.Error(c, projectErrorStatus(err), "remove project member failed", err.Error())
 	}
 
+	h.broadcastProjectEvent("project.members.changed", projectID, userID)
+
 	return utils.Success(c, fiber.StatusOK, "remove project member success", nil)
+}
+
+func (h *ProjectHandler) broadcastProjectEvent(eventType string, projectID uint, triggeredBy uint) {
+	if h.realtimeHub == nil {
+		return
+	}
+
+	event := realtime.NewEvent(eventType, "project", projectID, 0, triggeredBy)
+	h.realtimeHub.Broadcast(event, realtime.ProjectsListRoom(), realtime.ProjectRoom(projectID))
 }
 
 func getAuthContext(c *fiber.Ctx) (uint, string, error) {

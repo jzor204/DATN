@@ -5,6 +5,7 @@ import EmptyState from "../components/EmptyState";
 import LoadingScreen from "../components/LoadingScreen";
 import Pagination from "../components/Pagination";
 import SectionCard from "../components/SectionCard";
+import { useRealtimeSubscription } from "../hooks/useRealtimeSubscription";
 import { formatDate } from "../utils/format";
 import { navigateTo } from "../utils/router";
 
@@ -30,6 +31,29 @@ export default function ProjectListPage({ currentUser }) {
   const [form, setForm] = useState(initialForm);
   const [submitting, setSubmitting] = useState(false);
   const [formMessage, setFormMessage] = useState("");
+
+  async function reloadProjects(pageToLoad = page) {
+    const payload = await listProjects(pageToLoad, 6);
+    setProjects(payload.data || []);
+    setPagination(payload.pagination || initialPagination);
+  }
+
+  useRealtimeSubscription({
+    enabled: Boolean(currentUser?.id),
+    scope: "projects",
+    currentUserId: currentUser.id,
+    onEvent: async (event) => {
+      if (!event.type || !event.type.startsWith("project.")) {
+        return;
+      }
+
+      try {
+        await reloadProjects(page);
+      } catch (err) {
+        setPageError(err.message);
+      }
+    }
+  });
 
   useEffect(() => {
     let active = true;
@@ -81,9 +105,7 @@ export default function ProjectListPage({ currentUser }) {
       if (page !== 1) {
         setPage(1);
       } else {
-        const payload = await listProjects(1, 6);
-        setProjects(payload.data || []);
-        setPagination(payload.pagination || initialPagination);
+        await reloadProjects(1);
       }
     } catch (err) {
       setFormMessage(err.message);

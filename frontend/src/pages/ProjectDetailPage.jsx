@@ -14,6 +14,7 @@ import LoadingScreen from "../components/LoadingScreen";
 import Pagination from "../components/Pagination";
 import SectionCard from "../components/SectionCard";
 import StatusBadge from "../components/StatusBadge";
+import { useRealtimeSubscription } from "../hooks/useRealtimeSubscription";
 import { formatDate, formatRoleLabel, toOptionalNumber } from "../utils/format";
 import { navigateTo } from "../utils/router";
 
@@ -137,6 +138,45 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
     setTasks(payload.data || []);
     setTaskPagination(payload.pagination || initialTaskPagination);
   }
+
+  useRealtimeSubscription({
+    enabled: Boolean(projectId),
+    scope: "project",
+    projectId,
+    currentUserId: currentUser.id,
+    onEvent: async (event) => {
+      if (!event.type) {
+        return;
+      }
+
+      try {
+        if (event.type === "project.deleted") {
+          navigateTo("/projects", { replace: true });
+          return;
+        }
+
+        if (event.type === "project.updated" || event.type === "project.created") {
+          await reloadProjectOnly();
+          return;
+        }
+
+        if (event.type === "project.members.changed") {
+          await reloadMembers();
+          return;
+        }
+
+        if (event.type.startsWith("task.")) {
+          await reloadTasks(taskPage);
+        }
+      } catch (err) {
+        setPageError(err.message);
+
+        if (err.status === 403 || err.status === 404) {
+          navigateTo("/projects", { replace: true });
+        }
+      }
+    }
+  });
 
   async function handleUpdateProject(event) {
     event.preventDefault();

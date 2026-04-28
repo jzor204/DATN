@@ -13,14 +13,17 @@ func NewRouter(
 	projectHandler *handler.ProjectHandler,
 	taskHandler *handler.TaskHandler,
 	commentHandler *handler.CommentHandler,
+	wsHandler *handler.WebSocketHandler,
 	authMiddleware fiber.Handler,
 ) *fiber.App {
 	app := fiber.New()
+
 	app.Use(cors.New(cors.Config{
 		AllowOrigins: "*",
 		AllowMethods: "GET,POST,PUT,DELETE,OPTIONS",
 		AllowHeaders: "Origin,Content-Type,Accept,Authorization",
 	}))
+
 	app.Get("/swagger/*", swagger.HandlerDefault)
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
@@ -30,6 +33,8 @@ func NewRouter(
 	})
 
 	api := app.Group("/api/v1")
+
+	api.Get("/ws", handler.WebSocketUpgradeRequired, wsHandler.Authorize, wsHandler.Handle())
 
 	auth := api.Group("/auth")
 	auth.Post("/register", authHandler.Register)
@@ -60,6 +65,6 @@ func NewRouter(
 	comments := api.Group("/comments", authMiddleware)
 	comments.Put("/:id", commentHandler.Update)
 	comments.Delete("/:id", commentHandler.Delete)
-	// http://localhost:8080/swagger/index.html
+
 	return app
 }
