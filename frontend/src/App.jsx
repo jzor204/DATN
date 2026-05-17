@@ -5,10 +5,13 @@ import AlertBanner from "./components/AlertBanner";
 import LoadingScreen from "./components/LoadingScreen";
 import { useHashRoute } from "./hooks/useHashRoute";
 import LoginPage from "./pages/LoginPage";
+import MembersPage from "./pages/MembersPage";
+import MyTasksPage from "./pages/MyTasksPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import ProjectDetailPage from "./pages/ProjectDetailPage";
 import ProjectListPage from "./pages/ProjectListPage";
 import RegisterPage from "./pages/RegisterPage";
+import SettingsPage from "./pages/SettingsPage";
 import TaskDetailPage from "./pages/TaskDetailPage";
 import ProtectedRoute from "./routes/ProtectedRoute";
 import { clearAccessToken, getAccessToken, setAccessToken } from "./utils/auth";
@@ -137,6 +140,12 @@ export default function App() {
 
   if (route.pathname === "/projects") {
     protectedContent = <ProjectListPage currentUser={currentUser} />;
+  } else if (route.pathname === "/my-tasks") {
+    protectedContent = <MyTasksPage currentUser={currentUser} />;
+  } else if (route.pathname === "/members") {
+    protectedContent = <MembersPage currentUser={currentUser} />;
+  } else if (route.pathname === "/settings") {
+    protectedContent = <SettingsPage currentUser={currentUser} onLogout={handleLogout} />;
   } else if (projectId) {
     protectedContent = <ProjectDetailPage currentUser={currentUser} projectId={projectId} />;
   } else if (taskId) {

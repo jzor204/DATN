@@ -30,86 +30,75 @@ export default function LoginPage({ notice, onAuthSuccess }) {
   }
 
   return (
-    <div className="mx-auto grid min-h-screen max-w-6xl items-center gap-6 px-4 py-8 lg:grid-cols-[1.15fr_0.85fr]">
-      <div className="space-y-5">
-        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-tide">Task Management</p>
-        <h1 className="text-5xl text-ink sm:text-6xl">Dua backend hien tai len thanh mot frontend MVP co the demo ngay.</h1>
-        <p className="max-w-2xl text-base leading-7 text-slate-600">
-          Dang nhap de tao project, them member, tao task, doi trang thai va comment tren cung
-          mot giao dien web don gian, ro luong va bam sat API.
-        </p>
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-8">
+      <div className="w-full max-w-md">
+        <div className="mb-6 text-center">
+          <div className="text-xl font-semibold text-ink">Task Management</div>
+          <div className="mt-2 text-sm text-slate-500">Quan ly du an, cong viec va binh luan</div>
+        </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="glass-panel rounded-[28px] border border-white/70 px-5 py-5 shadow-panel">
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-ember">Seed Admin</p>
-            <div className="mt-3 space-y-1 text-sm text-slate-700">
-              <div>Email: admin@example.com</div>
-              <div>Password: 123456</div>
-            </div>
+        <SectionCard
+          action={
+            <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              API online
+            </span>
+          }
+          title="Dang nhap"
+        >
+          <form className="space-y-4" onSubmit={handleSubmit}>
+            <AlertBanner message={notice} tone="info" />
+            <AlertBanner message={error} />
+
+            <label className="block space-y-2">
+              <span className="text-sm font-semibold text-slate-700">Email</span>
+              <input
+                className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
+                placeholder="admin@example.com"
+                required
+                type="email"
+                value={form.email}
+              />
+            </label>
+
+            <label className="block space-y-2">
+              <span className="text-sm font-semibold text-slate-700">Mat khau</span>
+              <input
+                className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
+                placeholder="123456"
+                required
+                type="password"
+                value={form.password}
+              />
+            </label>
+
+            <button
+              className="w-full rounded-md bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+              disabled={submitting}
+              type="submit"
+            >
+              {submitting ? "Dang dang nhap..." : "Dang nhap"}
+            </button>
+          </form>
+
+          <div className="mt-5 flex items-center justify-between gap-3 text-sm text-slate-600">
+            <span>Chua co tai khoan?</span>
+            <button
+              className="font-semibold text-blue-600"
+              onClick={() => navigateTo("/register")}
+              type="button"
+            >
+              Dang ky
+            </button>
           </div>
-          <div className="glass-panel rounded-[28px] border border-white/70 px-5 py-5 shadow-panel">
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-tide">Seed Members</p>
-            <div className="mt-3 space-y-1 text-sm text-slate-700">
-              <div>membera@example.com / 123456</div>
-              <div>memberb@example.com / 123456</div>
-            </div>
-          </div>
+        </SectionCard>
+
+        <div className="mt-4 rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500">
+          Seed admin: admin@example.com / 123456
         </div>
       </div>
-
-      <SectionCard
-        title="Login"
-        eyebrow="Access"
-        description="Token se duoc luu localStorage va tu dong gui kem theo moi request."
-      >
-        <form className="space-y-4" onSubmit={handleSubmit}>
-          <AlertBanner message={notice} tone="info" />
-          <AlertBanner message={error} />
-
-          <label className="block space-y-2">
-            <span className="text-sm font-semibold text-slate-700">Email</span>
-            <input
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-tide"
-              onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
-              placeholder="admin@example.com"
-              required
-              type="email"
-              value={form.email}
-            />
-          </label>
-
-          <label className="block space-y-2">
-            <span className="text-sm font-semibold text-slate-700">Password</span>
-            <input
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-tide"
-              onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
-              placeholder="123456"
-              required
-              type="password"
-              value={form.password}
-            />
-          </label>
-
-          <button
-            className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-            disabled={submitting}
-            type="submit"
-          >
-            {submitting ? "Signing in..." : "Sign in"}
-          </button>
-        </form>
-
-        <div className="mt-5 text-sm text-slate-600">
-          Chua co tai khoan?{" "}
-          <button
-            className="font-semibold text-tide"
-            onClick={() => navigateTo("/register")}
-            type="button"
-          >
-            Dang ky tai day
-          </button>
-        </div>
-      </SectionCard>
     </div>
   );
 }

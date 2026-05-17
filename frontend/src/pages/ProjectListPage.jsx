@@ -21,6 +21,36 @@ const initialPagination = {
   total_pages: 0
 };
 
+function MetricCard({ label, value, hint }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-panel">
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="mt-2 text-2xl font-semibold text-ink">{value}</div>
+      {hint ? <div className="mt-1 text-xs text-slate-500">{hint}</div> : null}
+    </div>
+  );
+}
+
+function getProjectRole(project, currentUser) {
+  if (Number(project.owner_id) === Number(currentUser.id)) {
+    return "owner";
+  }
+  if (currentUser.role === "admin") {
+    return "admin";
+  }
+  return "member";
+}
+
+function getRoleTone(role) {
+  if (role === "owner") {
+    return "bg-slate-900 text-white";
+  }
+  if (role === "admin") {
+    return "bg-blue-100 text-blue-700";
+  }
+  return "bg-slate-100 text-slate-700";
+}
+
 export default function ProjectListPage({ currentUser }) {
   const [projects, setProjects] = useState([]);
   const [pagination, setPagination] = useState(initialPagination);
@@ -115,126 +145,138 @@ export default function ProjectListPage({ currentUser }) {
   }
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-      <SectionCard
-        title="Project Command Desk"
-        eyebrow="Workspace"
-        description="Tao project moi, quan sat danh sach project duoc phep truy cap va dung user ID cua ban de add vao project khac."
-      >
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div className="rounded-[24px] bg-slate-900 px-4 py-4 text-white">
-            <p className="text-xs uppercase tracking-[0.25em] text-slate-300">Current User</p>
-            <div className="mt-3 text-lg font-semibold">{currentUser.name}</div>
-            <div className="mt-1 text-sm text-slate-300">{currentUser.email}</div>
-          </div>
-          <div className="rounded-[24px] bg-white/70 px-4 py-4">
-            <p className="text-xs uppercase tracking-[0.25em] text-tide">Role</p>
-            <div className="mt-3 text-lg font-semibold text-ink">{currentUser.role}</div>
-            <div className="mt-1 text-sm text-slate-600">Quyen global hien tai cua tai khoan.</div>
-          </div>
-          <div className="rounded-[24px] bg-white/70 px-4 py-4">
-            <p className="text-xs uppercase tracking-[0.25em] text-ember">User ID</p>
-            <div className="mt-3 text-lg font-semibold text-ink">{currentUser.id}</div>
-            <div className="mt-1 text-sm text-slate-600">Dung ID nay de duoc them vao project.</div>
-          </div>
+    <div className="space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-ink">Du an</h1>
+          <p className="mt-1 text-sm text-slate-600">
+            Quan ly cac project ban co quyen truy cap va theo doi cap nhat realtime.
+          </p>
         </div>
+        <button
+          className="rounded-md bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
+          onClick={() => setRefreshKey((prev) => prev + 1)}
+          type="button"
+        >
+          Refresh
+        </button>
+      </div>
 
-        <form className="mt-6 space-y-4" onSubmit={handleCreateProject}>
-          <AlertBanner
-            message={formMessage}
-            tone={formMessage === "Project created successfully." ? "success" : "error"}
-          />
+      <div className="grid gap-4 md:grid-cols-4">
+        <MetricCard label="Tong du an" value={pagination.total || projects.length} hint="Theo quyen truy cap" />
+        <MetricCard label="Dang hoat dong" value={projects.length} hint="Trang hien tai" />
+        <MetricCard label="Cong viec cua toi" value="--" hint="Theo API task hien co" />
+        <MetricCard label="Cap nhat realtime" value="On" hint="WebSocket projects scope" />
+      </div>
 
-          <label className="block space-y-2">
-            <span className="text-sm font-semibold text-slate-700">Project name</span>
-            <input
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-tide"
-              onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-              placeholder="Project Alpha"
-              required
-              value={form.name}
+      <div className="grid gap-6 xl:grid-cols-[360px_1fr]">
+        <SectionCard title="Tao du an" eyebrow="Workspace">
+          <form className="space-y-4" onSubmit={handleCreateProject}>
+            <AlertBanner
+              message={formMessage}
+              tone={formMessage === "Project created successfully." ? "success" : "error"}
             />
-          </label>
 
-          <label className="block space-y-2">
-            <span className="text-sm font-semibold text-slate-700">Description</span>
-            <textarea
-              className="min-h-28 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-tide"
-              onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))}
-              placeholder="Mo ta ngan gon muc tieu cua project"
-              value={form.description}
-            />
-          </label>
+            <label className="block space-y-2">
+              <span className="text-sm font-semibold text-slate-700">Ten du an</span>
+              <input
+                className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
+                placeholder="Website Redesign"
+                required
+                value={form.name}
+              />
+            </label>
 
-          <button
-            className="rounded-2xl bg-ember px-5 py-3 text-sm font-semibold text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={submitting}
-            type="submit"
-          >
-            {submitting ? "Creating..." : "Create project"}
-          </button>
-        </form>
-      </SectionCard>
+            <label className="block space-y-2">
+              <span className="text-sm font-semibold text-slate-700">Mo ta</span>
+              <textarea
+                className="min-h-24 w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))}
+                placeholder="Muc tieu ngan gon cua project"
+                value={form.description}
+              />
+            </label>
 
-      <SectionCard
-        action={
-          <button
-            className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-900 hover:text-slate-900"
-            onClick={() => setRefreshKey((prev) => prev + 1)}
-            type="button"
-          >
-            Refresh
-          </button>
-        }
-        title="Projects"
-        eyebrow="Listing"
-        description="Member se chi thay project ma minh thuoc ve. Admin global se thay tat ca."
-      >
-        <AlertBanner message={pageError} />
+            <button
+              className="w-full rounded-md bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+              disabled={submitting}
+              type="submit"
+            >
+              {submitting ? "Dang tao..." : "Tao du an"}
+            </button>
+          </form>
 
-        {loading ? <LoadingScreen label="Loading projects..." /> : null}
-
-        {!loading && projects.length === 0 ? (
-          <EmptyState
-            description="Ban chua co project nao. Tao project dau tien o cot ben trai de bat dau."
-            title="No projects yet"
-          />
-        ) : null}
-
-        {!loading && projects.length > 0 ? (
-          <div className="space-y-4">
-            <div className="grid gap-4">
-              {projects.map((project) => (
-                <article
-                  className="rounded-[28px] border border-slate-200 bg-white/80 px-5 py-5 transition hover:-translate-y-0.5 hover:shadow-lg"
-                  key={project.id}
-                >
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="space-y-2">
-                      <h3 className="text-2xl text-ink">{project.name}</h3>
-                      <p className="text-sm text-slate-600">{project.description || "No description"}</p>
-                      <div className="flex flex-wrap gap-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        <span>Project ID: {project.id}</span>
-                        <span>Owner ID: {project.owner_id}</span>
-                        <span>Created: {formatDate(project.created_at)}</span>
-                      </div>
-                    </div>
-                    <button
-                      className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
-                      onClick={() => navigateTo(`/projects/${project.id}`)}
-                      type="button"
-                    >
-                      Open project
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-
-            <Pagination pagination={pagination} onPageChange={setPage} />
+          <div className="mt-4 rounded-lg bg-slate-50 px-4 py-3 text-xs text-slate-500">
+            User ID cua ban: <span className="font-semibold text-slate-700">#{currentUser.id}</span>
           </div>
-        ) : null}
-      </SectionCard>
+        </SectionCard>
+
+        <SectionCard title="Danh sach du an" eyebrow="Listing">
+          <AlertBanner message={pageError} />
+
+          {loading ? <LoadingScreen label="Loading projects..." /> : null}
+
+          {!loading && projects.length === 0 ? (
+            <EmptyState
+              description="Ban chua co project nao. Tao project dau tien de bat dau."
+              title="No projects yet"
+            />
+          ) : null}
+
+          {!loading && projects.length > 0 ? (
+            <div className="space-y-4">
+              <div className="overflow-hidden rounded-lg border border-slate-200">
+                <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+                  <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-4 py-3">Ten du an</th>
+                      <th className="px-4 py-3">Vai tro</th>
+                      <th className="px-4 py-3">Owner</th>
+                      <th className="px-4 py-3">Cap nhat luc</th>
+                      <th className="px-4 py-3 text-right">Hanh dong</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {projects.map((project) => (
+                      <tr className="transition hover:bg-slate-50" key={project.id}>
+                        <td className="px-4 py-4">
+                          <div className="font-semibold text-ink">{project.name}</div>
+                          <div className="mt-1 max-w-xl truncate text-xs text-slate-500">
+                            {project.description || "No description"}
+                          </div>
+                        </td>
+                        <td className="px-4 py-4">
+                          <span
+                            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getRoleTone(
+                              getProjectRole(project, currentUser)
+                            )}`}
+                          >
+                            {getProjectRole(project, currentUser)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4 text-slate-600">#{project.owner_id}</td>
+                        <td className="px-4 py-4 text-slate-600">{formatDate(project.updated_at || project.created_at)}</td>
+                        <td className="px-4 py-4 text-right">
+                          <button
+                            className="rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-800"
+                            onClick={() => navigateTo(`/projects/${project.id}`)}
+                            type="button"
+                          >
+                            Open
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <Pagination pagination={pagination} onPageChange={setPage} />
+            </div>
+          ) : null}
+        </SectionCard>
+      </div>
     </div>
   );
 }

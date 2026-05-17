@@ -7,7 +7,7 @@ export default function Pagination({ pagination, onPageChange }) {
   const totalPages = pagination.total_pages;
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-3">
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3">
       <p className="text-sm text-slate-600">
         Page <span className="font-semibold text-ink">{currentPage}</span> / {totalPages} - Total{" "}
         <span className="font-semibold text-ink">{pagination.total}</span>
@@ -15,7 +15,7 @@ export default function Pagination({ pagination, onPageChange }) {
 
       <div className="flex items-center gap-2">
         <button
-          className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-50"
           disabled={currentPage <= 1}
           onClick={() => onPageChange(currentPage - 1)}
           type="button"
@@ -23,7 +23,7 @@ export default function Pagination({ pagination, onPageChange }) {
           Previous
         </button>
         <button
-          className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-400"
           disabled={currentPage >= totalPages}
           onClick={() => onPageChange(currentPage + 1)}
           type="button"

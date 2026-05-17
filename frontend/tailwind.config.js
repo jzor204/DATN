@@ -4,15 +4,15 @@ export default {
   theme: {
     extend: {
       boxShadow: {
-        panel: "0 22px 60px rgba(15, 23, 42, 0.14)"
+        panel: "0 1px 2px rgba(15, 23, 42, 0.06)"
       },
       colors: {
-        ink: "#122033",
-        dune: "#f6efe5",
-        ember: "#e87b62",
-        tide: "#2f7f8d",
-        moss: "#436a52",
-        sand: "#f2dcc1"
+        ink: "#0f172a",
+        dune: "#f8fafc",
+        ember: "#2563eb",
+        tide: "#2563eb",
+        moss: "#0f766e",
+        sand: "#e2e8f0"
       }
     }
   },

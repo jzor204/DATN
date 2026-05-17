@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -152,7 +153,37 @@ func (h *ProjectHandler) ListMembers(c *fiber.Ctx) error {
 		return utils.Error(c, fiber.StatusBadRequest, "invalid project id", err.Error())
 	}
 
+	candidateMode := c.QueryBool("candidates", false) ||
+		c.QueryInt("candidates", 0) == 1 ||
+		strings.EqualFold(queryValue(c, "candidates"), "true") ||
+		strings.EqualFold(queryValue(c, "view"), "candidates")
+	candidateQuery := queryValue(c, "q")
 	page, pageSize := getPagination(c)
+
+	if candidateMode {
+		result, total, err := h.projectUsecase.ListMemberCandidates(
+			c.UserContext(),
+			userID,
+			globalRole,
+			projectID,
+			candidateQuery,
+			page,
+			pageSize,
+		)
+		if err != nil {
+			return utils.Error(c, projectErrorStatus(err), "get member candidates failed", err.Error())
+		}
+
+		return utils.Success(c, fiber.StatusOK, "get member candidates success", fiber.Map{
+			"data": result,
+			"pagination": dto.PaginationResponse{
+				Page:       page,
+				PageSize:   pageSize,
+				Total:      total,
+				TotalPages: calculateTotalPages(total, pageSize),
+			},
+		})
+	}
 
 	result, total, err := h.projectUsecase.ListMembers(c.UserContext(), userID, globalRole, projectID, page, pageSize)
 	if err != nil {
@@ -160,6 +191,44 @@ func (h *ProjectHandler) ListMembers(c *fiber.Ctx) error {
 	}
 
 	return utils.Success(c, fiber.StatusOK, "get project members success", fiber.Map{
+		"data": result,
+		"pagination": dto.PaginationResponse{
+			Page:       page,
+			PageSize:   pageSize,
+			Total:      total,
+			TotalPages: calculateTotalPages(total, pageSize),
+		},
+	})
+}
+
+func (h *ProjectHandler) ListMemberCandidates(c *fiber.Ctx) error {
+	userID, globalRole, err := getAuthContext(c)
+	if err != nil {
+		return utils.Error(c, fiber.StatusUnauthorized, "unauthorized", err.Error())
+	}
+
+	projectID, err := parseProjectIDParamOrQuery(c)
+	if err != nil {
+		return utils.Error(c, fiber.StatusBadRequest, "invalid project id", err.Error())
+	}
+
+	query := queryValue(c, "q")
+	page, pageSize := getPagination(c)
+
+	result, total, err := h.projectUsecase.ListMemberCandidates(
+		c.UserContext(),
+		userID,
+		globalRole,
+		projectID,
+		query,
+		page,
+		pageSize,
+	)
+	if err != nil {
+		return utils.Error(c, projectErrorStatus(err), "get member candidates failed", err.Error())
+	}
+
+	return utils.Success(c, fiber.StatusOK, "get member candidates success", fiber.Map{
 		"data": result,
 		"pagination": dto.PaginationResponse{
 			Page:       page,
@@ -253,6 +322,33 @@ func parseUintParam(c *fiber.Ctx, key string) (uint, error) {
 		return 0, err
 	}
 	return uint(parsed), nil
+}
+
+func parseProjectIDParamOrQuery(c *fiber.Ctx) (uint, error) {
+	rawParam := strings.TrimSpace(c.Params("id"))
+	if rawParam != "" {
+		return parseUintParam(c, "id")
+	}
+
+	rawQuery := strings.TrimSpace(queryValue(c, "project_id"))
+	if rawQuery == "" {
+		return 0, errors.New("project_id is required")
+	}
+
+	return parseUintQuery(rawQuery)
+}
+
+func queryValue(c *fiber.Ctx, key string) string {
+	if value := c.Query(key); value != "" {
+		return strings.Clone(value)
+	}
+
+	parsedURL, err := url.ParseRequestURI(c.OriginalURL())
+	if err != nil {
+		return ""
+	}
+
+	return strings.Clone(parsedURL.Query().Get(key))
 }
 
 func getPagination(c *fiber.Ctx) (int, int) {

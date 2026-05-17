@@ -11,6 +11,27 @@ export async function listTasksByProject(projectId, page = 1, pageSize = 10) {
   return response.data;
 }
 
+export async function listMyTasks({ page = 1, pageSize = 10, projectId, status } = {}) {
+  const params = {
+    page,
+    page_size: pageSize
+  };
+
+  if (projectId && projectId !== "all") {
+    params.project_id = projectId;
+  }
+
+  if (status && status !== "all") {
+    params.status = status;
+  }
+
+  const response = await axiosClient.get("/tasks/me", {
+    params
+  });
+
+  return response.data;
+}
+
 export async function createTask(projectId, payload) {
   const response = await axiosClient.post(`/projects/${projectId}/tasks`, payload);
   return response.data;

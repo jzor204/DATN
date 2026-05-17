@@ -48,6 +48,14 @@ type ProjectMemberOutput struct {
 	JoinedAt      time.Time `json:"joined_at"`
 }
 
+type ProjectMemberCandidateOutput struct {
+	UserID    uint      `json:"user_id"`
+	Name      string    `json:"name"`
+	Email     string    `json:"email"`
+	Role      string    `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 func NewProjectUsecase(
 	projectRepo interfaces.ProjectRepository,
 	userRepo interfaces.UserRepository,
@@ -246,6 +254,54 @@ func (uc *ProjectUsecase) ListMembers(
 			Email:         user.Email,
 			RoleInProject: member.RoleInProject,
 			JoinedAt:      member.CreatedAt,
+		})
+	}
+
+	return result, total, nil
+}
+
+func (uc *ProjectUsecase) ListMemberCandidates(
+	ctx context.Context,
+	actorID uint,
+	globalRole string,
+	projectID uint,
+	query string,
+	page int,
+	pageSize int,
+) ([]ProjectMemberCandidateOutput, int64, error) {
+	project, err := uc.projectRepo.GetByID(ctx, projectID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if project == nil {
+		return nil, 0, errors.New("project not found")
+	}
+
+	if err := uc.accessService.CanManageMembers(ctx, projectID, actorID, globalRole); err != nil {
+		return nil, 0, err
+	}
+
+	page, pageSize = normalizePagination(page, pageSize)
+
+	users, total, err := uc.userRepo.ListCandidatesForProject(
+		ctx,
+		projectID,
+		strings.TrimSpace(query),
+		page,
+		pageSize,
+	)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	result := make([]ProjectMemberCandidateOutput, 0, len(users))
+	for _, user := range users {
+		result = append(result, ProjectMemberCandidateOutput{
+			UserID:    user.ID,
+			Name:      user.Name,
+			Email:     user.Email,
+			Role:      user.Role,
+			CreatedAt: user.CreatedAt,
 		})
 	}
 

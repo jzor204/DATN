@@ -95,9 +95,29 @@ type ProjectMemberListSuccessResponse struct {
 	Data    ProjectMemberListPayload `json:"data"`
 }
 
+type ProjectMemberCandidateData struct {
+	UserID    uint      `json:"user_id" example:"4"`
+	Name      string    `json:"name" example:"Tran Van C"`
+	Email     string    `json:"email" example:"c@example.com"`
+	Role      string    `json:"role" example:"member"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type ProjectMemberCandidateListPayload struct {
+	Data       []ProjectMemberCandidateData `json:"data"`
+	Pagination SwaggerPaginationResponse    `json:"pagination"`
+}
+
+type ProjectMemberCandidateListSuccessResponse struct {
+	Success bool                              `json:"success" example:"true"`
+	Message string                            `json:"message" example:"get member candidates success"`
+	Data    ProjectMemberCandidateListPayload `json:"data"`
+}
+
 type TaskData struct {
 	ID          uint      `json:"id" example:"1"`
 	ProjectID   uint      `json:"project_id" example:"1"`
+	ProjectName string    `json:"project_name,omitempty" example:"Website Redesign"`
 	Title       string    `json:"title" example:"Task 1"`
 	Description string    `json:"description" example:"Mo ta task"`
 	Status      string    `json:"status" example:"todo"`

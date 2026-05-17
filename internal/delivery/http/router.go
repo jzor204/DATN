@@ -56,6 +56,7 @@ func NewRouter(
 	projects.Get("/:id/tasks", taskHandler.ListByProject)
 
 	tasks := api.Group("/tasks", authMiddleware)
+	tasks.Get("/me", taskHandler.ListMine)
 	tasks.Get("/:id", taskHandler.GetByID)
 	tasks.Put("/:id", taskHandler.Update)
 	tasks.Delete("/:id", taskHandler.Delete)

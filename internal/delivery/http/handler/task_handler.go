@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"strings"
+
 	"task-management/internal/delivery/http/realtime"
 	"task-management/internal/dto"
 	"task-management/internal/usecase"
@@ -10,14 +12,16 @@ import (
 )
 
 type TaskHandler struct {
-	taskUsecase *usecase.TaskUsecase
-	realtimeHub *realtime.Hub
+	taskUsecase    *usecase.TaskUsecase
+	projectUsecase *usecase.ProjectUsecase
+	realtimeHub    *realtime.Hub
 }
 
-func NewTaskHandler(taskUsecase *usecase.TaskUsecase, realtimeHub *realtime.Hub) *TaskHandler {
+func NewTaskHandler(taskUsecase *usecase.TaskUsecase, projectUsecase *usecase.ProjectUsecase, realtimeHub *realtime.Hub) *TaskHandler {
 	return &TaskHandler{
-		taskUsecase: taskUsecase,
-		realtimeHub: realtimeHub,
+		taskUsecase:    taskUsecase,
+		projectUsecase: projectUsecase,
+		realtimeHub:    realtimeHub,
 	}
 }
 
@@ -70,6 +74,93 @@ func (h *TaskHandler) ListByProject(c *fiber.Ctx) error {
 	}
 
 	return utils.Success(c, fiber.StatusOK, "get tasks success", fiber.Map{
+		"data": result,
+		"pagination": dto.PaginationResponse{
+			Page:       page,
+			PageSize:   pageSize,
+			Total:      total,
+			TotalPages: calculateTotalPages(total, pageSize),
+		},
+	})
+}
+
+func (h *TaskHandler) ListMine(c *fiber.Ctx) error {
+	userID, globalRole, err := getAuthContext(c)
+	if err != nil {
+		return utils.Error(c, fiber.StatusUnauthorized, "unauthorized", err.Error())
+	}
+
+	status := strings.Clone(queryValue(c, "status"))
+	rawProjectID := strings.Clone(queryValue(c, "project_id"))
+	candidateQuery := strings.Clone(queryValue(c, "q"))
+	originalURL := strings.ToLower(strings.Clone(c.OriginalURL()))
+	candidateMode := strings.Contains(strings.ToLower(status), "candidate") ||
+		strings.Contains(originalURL, "status=candidates")
+	page, pageSize := getPagination(c)
+	if !candidateMode {
+		candidateMode = strings.Contains(strings.ToLower(status), "candidate") ||
+			strings.Contains(strings.ToLower(c.OriginalURL()), "status=candidates")
+	}
+
+	if candidateMode {
+		if rawProjectID == "" {
+			return utils.Error(c, fiber.StatusBadRequest, "invalid project id", "project_id is required")
+		}
+
+		projectID, err := parseUintQuery(rawProjectID)
+		if err != nil {
+			return utils.Error(c, fiber.StatusBadRequest, "invalid project id", err.Error())
+		}
+
+		result, total, err := h.projectUsecase.ListMemberCandidates(
+			c.UserContext(),
+			userID,
+			globalRole,
+			projectID,
+			candidateQuery,
+			page,
+			pageSize,
+		)
+		if err != nil {
+			return utils.Error(c, projectErrorStatus(err), "get member candidates failed", err.Error())
+		}
+
+		return utils.Success(c, fiber.StatusOK, "get member candidates success", fiber.Map{
+			"data": result,
+			"pagination": dto.PaginationResponse{
+				Page:       page,
+				PageSize:   pageSize,
+				Total:      total,
+				TotalPages: calculateTotalPages(total, pageSize),
+			},
+		})
+	}
+
+	var projectID *uint
+	if rawProjectID != "" {
+		parsedProjectID, err := parseUintQuery(rawProjectID)
+		if err != nil {
+			return utils.Error(c, fiber.StatusBadRequest, "invalid project id", err.Error())
+		}
+		projectID = &parsedProjectID
+	}
+
+	result, total, err := h.taskUsecase.ListAssignedToUser(
+		c.UserContext(),
+		userID,
+		globalRole,
+		usecase.ListMyTasksInput{
+			ProjectID: projectID,
+			Status:    status,
+			Page:      page,
+			PageSize:  pageSize,
+		},
+	)
+	if err != nil {
+		return utils.Error(c, projectErrorStatus(err), "get my tasks failed", err.Error())
+	}
+
+	return utils.Success(c, fiber.StatusOK, "get my tasks success", fiber.Map{
 		"data": result,
 		"pagination": dto.PaginationResponse{
 			Page:       page,

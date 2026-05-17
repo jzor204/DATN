@@ -16,13 +16,13 @@ export function formatDate(value) {
 
 export function formatTaskStatus(status) {
   if (status === "in_progress" || status === "in-progress") {
-    return "In Progress";
+    return "in-progress";
   }
   if (status === "todo") {
-    return "Todo";
+    return "todo";
   }
   if (status === "done") {
-    return "Done";
+    return "done";
   }
   return status || "Unknown";
 }

@@ -33,6 +33,7 @@ type UpdateTaskInput struct {
 type TaskOutput struct {
 	ID          uint      `json:"id"`
 	ProjectID   uint      `json:"project_id"`
+	ProjectName string    `json:"project_name,omitempty"`
 	Title       string    `json:"title"`
 	Description string    `json:"description"`
 	Status      string    `json:"status"`
@@ -40,6 +41,13 @@ type TaskOutput struct {
 	CreatedBy   uint      `json:"created_by"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type ListMyTasksInput struct {
+	ProjectID *uint
+	Status    string
+	Page      int
+	PageSize  int
 }
 
 func NewTaskUsecase(
@@ -146,6 +154,74 @@ func (uc *TaskUsecase) ListByProject(
 	result := make([]TaskOutput, 0, len(tasks))
 	for _, task := range tasks {
 		result = append(result, *toTaskOutput(task))
+	}
+
+	return result, total, nil
+}
+
+func (uc *TaskUsecase) ListAssignedToUser(
+	ctx context.Context,
+	actorID uint,
+	globalRole string,
+	input ListMyTasksInput,
+) ([]TaskOutput, int64, error) {
+	page, pageSize := normalizePagination(input.Page, input.PageSize)
+
+	status := strings.TrimSpace(input.Status)
+	if status != "" {
+		status = normalizeTaskStatus(status)
+		if !isValidTaskStatus(status) {
+			return nil, 0, errors.New("invalid task status")
+		}
+	}
+
+	if input.ProjectID != nil {
+		project, err := uc.projectRepo.GetByID(ctx, *input.ProjectID)
+		if err != nil {
+			return nil, 0, err
+		}
+		if project == nil {
+			return nil, 0, errors.New("project not found")
+		}
+
+		if err := uc.accessService.CanViewProject(ctx, *input.ProjectID, actorID, globalRole); err != nil {
+			return nil, 0, err
+		}
+	}
+
+	requireMembership := globalRole != domain.UserRoleAdmin
+	tasks, total, err := uc.taskRepo.ListAssignedToUser(
+		ctx,
+		actorID,
+		input.ProjectID,
+		status,
+		requireMembership,
+		page,
+		pageSize,
+	)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	projectNames := make(map[uint]string)
+	result := make([]TaskOutput, 0, len(tasks))
+	for _, task := range tasks {
+		output := *toTaskOutput(task)
+
+		projectName, ok := projectNames[task.ProjectID]
+		if !ok {
+			project, err := uc.projectRepo.GetByID(ctx, task.ProjectID)
+			if err != nil {
+				return nil, 0, err
+			}
+			if project != nil {
+				projectName = project.Name
+			}
+			projectNames[task.ProjectID] = projectName
+		}
+
+		output.ProjectName = projectName
+		result = append(result, output)
 	}
 
 	return result, total, nil

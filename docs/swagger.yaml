@@ -218,6 +218,43 @@ definitions:
         example: true
         type: boolean
     type: object
+  dto.ProjectMemberCandidateData:
+    properties:
+      created_at:
+        type: string
+      email:
+        example: c@example.com
+        type: string
+      name:
+        example: Tran Van C
+        type: string
+      role:
+        example: member
+        type: string
+      user_id:
+        example: 4
+        type: integer
+    type: object
+  dto.ProjectMemberCandidateListPayload:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/dto.ProjectMemberCandidateData'
+        type: array
+      pagination:
+        $ref: '#/definitions/dto.SwaggerPaginationResponse'
+    type: object
+  dto.ProjectMemberCandidateListSuccessResponse:
+    properties:
+      data:
+        $ref: '#/definitions/dto.ProjectMemberCandidateListPayload'
+      message:
+        example: get member candidates success
+        type: string
+      success:
+        example: true
+        type: boolean
+    type: object
   dto.ProjectMemberSuccessResponse:
     properties:
       data:
@@ -292,6 +329,9 @@ definitions:
       project_id:
         example: 1
         type: integer
+      project_name:
+        example: Website Redesign
+        type: string
       status:
         example: todo
         type: string
@@ -904,6 +944,60 @@ paths:
       security:
       - BearerAuth: []
       summary: Create task
+      tags:
+      - Tasks
+  /tasks/me:
+    get:
+      consumes:
+      - application/json
+      description: List tasks assigned to current user
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: Project ID
+        in: query
+        name: project_id
+        type: integer
+      - description: Search member candidates by name, email, or user ID
+        in: query
+        name: q
+        type: string
+      - description: Task status, accepts todo, in_progress, in-progress, done, or candidates for member candidate search
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.TaskListSuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/dto.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/dto.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/dto.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/dto.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List my tasks
       tags:
       - Tasks
   /tasks/{id}:

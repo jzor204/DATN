@@ -42,6 +42,23 @@ export async function listProjectMembers(projectId, page = 1, pageSize = 100) {
   return response.data;
 }
 
+export async function listProjectMemberCandidates(
+  projectId,
+  { q = "", page = 1, pageSize = 20 } = {}
+) {
+  const response = await axiosClient.get("/tasks/me", {
+    params: {
+      project_id: projectId,
+      status: "candidates",
+      q,
+      page,
+      page_size: pageSize
+    }
+  });
+
+  return response.data;
+}
+
 export async function addProjectMember(projectId, payload) {
   const response = await axiosClient.post(`/projects/${projectId}/members`, payload);
   return response.data;

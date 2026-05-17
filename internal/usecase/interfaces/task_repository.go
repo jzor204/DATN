@@ -12,4 +12,5 @@ type TaskRepository interface {
 	Delete(ctx context.Context, id uint) error
 
 	ListByProject(ctx context.Context, projectID uint, page int, pageSize int) ([]*domain.Task, int64, error)
+	ListAssignedToUser(ctx context.Context, userID uint, projectID *uint, status string, requireMembership bool, page int, pageSize int) ([]*domain.Task, int64, error)
 }

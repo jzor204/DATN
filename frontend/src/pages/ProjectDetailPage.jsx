@@ -41,6 +41,33 @@ const initialTaskPagination = {
   total_pages: 0
 };
 
+function normalizeStatus(status) {
+  if (status === "in-progress") {
+    return "in_progress";
+  }
+  return status || "todo";
+}
+
+function getMemberName(members, userId) {
+  const member = members.find((item) => Number(item.user_id) === Number(userId));
+  return member?.name || (userId ? `User #${userId}` : "Unassigned");
+}
+
+function RoleChip({ role }) {
+  const tone =
+    role === "owner"
+      ? "bg-slate-900 text-white"
+      : role === "admin"
+        ? "bg-blue-100 text-blue-700"
+        : "bg-slate-100 text-slate-700";
+
+  return (
+    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${tone}`}>
+      {formatRoleLabel(role)}
+    </span>
+  );
+}
+
 export default function ProjectDetailPage({ currentUser, projectId }) {
   const [project, setProject] = useState(null);
   const [members, setMembers] = useState([]);
@@ -74,6 +101,25 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
 
   const canDeleteProject =
     currentUser.role === "admin" || currentProjectMember?.role_in_project === "owner";
+
+  const groupedTasks = useMemo(() => {
+    const groups = {
+      todo: [],
+      in_progress: [],
+      done: []
+    };
+
+    tasks.forEach((task) => {
+      const status = normalizeStatus(task.status);
+      if (!groups[status]) {
+        groups.todo.push(task);
+        return;
+      }
+      groups[status].push(task);
+    });
+
+    return groups;
+  }, [tasks]);
 
   useEffect(() => {
     let active = true;
@@ -287,7 +333,7 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
       <EmptyState
         action={
           <button
-            className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
+            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
             onClick={() => navigateTo("/projects")}
             type="button"
           >
@@ -300,299 +346,296 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
     );
   }
 
+  const boardColumns = [
+    { key: "todo", title: "todo", hint: "Can lam" },
+    { key: "in_progress", title: "in-progress", hint: "Dang lam" },
+    { key: "done", title: "done", hint: "Hoan thanh" }
+  ];
+
   return (
     <div className="space-y-6">
-      <SectionCard
-        action={
+      <div className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white px-5 py-5 shadow-panel xl:flex-row xl:items-start xl:justify-between">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Du an / {project.name}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <h1 className="text-2xl font-semibold text-ink">{project.name}</h1>
+            <RoleChip role={currentProjectMember?.role_in_project || "viewer"} />
+          </div>
+          <p className="mt-2 max-w-3xl text-sm text-slate-600">{project.description || "No description"}</p>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
           <button
-            className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-900 hover:text-slate-900"
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
             onClick={() => navigateTo("/projects")}
             type="button"
           >
-            Back to projects
+            Back
           </button>
-        }
-        title={project.name}
-        eyebrow="Project Detail"
-        description={project.description || "No description"}
-      >
-        <AlertBanner message={pageError} />
-
-        <div className="mt-4 grid gap-4 md:grid-cols-4">
-          <div className="rounded-[24px] bg-slate-900 px-4 py-4 text-white">
-            <p className="text-xs uppercase tracking-[0.25em] text-slate-300">Project ID</p>
-            <div className="mt-3 text-lg font-semibold">{project.id}</div>
-          </div>
-          <div className="rounded-[24px] bg-white/70 px-4 py-4">
-            <p className="text-xs uppercase tracking-[0.25em] text-tide">Owner ID</p>
-            <div className="mt-3 text-lg font-semibold text-ink">{project.owner_id}</div>
-          </div>
-          <div className="rounded-[24px] bg-white/70 px-4 py-4">
-            <p className="text-xs uppercase tracking-[0.25em] text-ember">Your Project Role</p>
-            <div className="mt-3 text-lg font-semibold text-ink">
-              {formatRoleLabel(currentProjectMember?.role_in_project || "viewer")}
-            </div>
-          </div>
-          <div className="rounded-[24px] bg-white/70 px-4 py-4">
-            <p className="text-xs uppercase tracking-[0.25em] text-moss">Created</p>
-            <div className="mt-3 text-lg font-semibold text-ink">{formatDate(project.created_at)}</div>
-          </div>
+          <button
+            className="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+            disabled={!canManageProject}
+            form="create-task-form"
+            type="submit"
+          >
+            Tao cong viec
+          </button>
         </div>
-      </SectionCard>
+      </div>
 
-      <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-        <SectionCard
-          title="Project Settings"
-          eyebrow="Management"
-          description="Cap nhat thong tin project hoac xoa project neu ban la owner."
-        >
-          <form className="space-y-4" onSubmit={handleUpdateProject}>
-            <AlertBanner
-              message={projectMessage}
-              tone={projectMessage === "Project updated successfully." ? "success" : "error"}
-            />
+      <AlertBanner message={pageError} />
 
-            <label className="block space-y-2">
-              <span className="text-sm font-semibold text-slate-700">Project name</span>
-              <input
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-tide disabled:opacity-60"
-                disabled={!canManageProject}
-                onChange={(event) => setProjectForm((prev) => ({ ...prev, name: event.target.value }))}
-                required
-                value={projectForm.name}
+      <div className="flex flex-wrap items-center gap-2">
+        {["Board", "Tasks", "Members"].map((tab) => (
+          <span
+            className={`rounded-md px-3 py-2 text-sm font-semibold ${
+              tab === "Board" ? "bg-blue-50 text-blue-700" : "bg-white text-slate-600"
+            } border border-slate-200`}
+            key={tab}
+          >
+            {tab}
+          </span>
+        ))}
+        <span className="ml-auto rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+          Realtime project scope
+        </span>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
+        <div className="space-y-4">
+          <div className="grid gap-4 lg:grid-cols-3">
+            {boardColumns.map((column) => (
+              <section className="rounded-lg border border-slate-200 bg-slate-100/70 p-3" key={column.key}>
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <h2 className="text-sm font-semibold text-ink">{column.title}</h2>
+                    <p className="text-xs text-slate-500">{column.hint}</p>
+                  </div>
+                  <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-600">
+                    {groupedTasks[column.key].length}
+                  </span>
+                </div>
+
+                <div className="space-y-3">
+                  {groupedTasks[column.key].length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-slate-500">
+                      No tasks
+                    </div>
+                  ) : null}
+
+                  {groupedTasks[column.key].map((task) => (
+                    <article
+                      className="rounded-lg border border-slate-200 bg-white p-4 shadow-panel transition hover:border-blue-200"
+                      key={task.id}
+                    >
+                      <button
+                        className="block w-full text-left"
+                        onClick={() => navigateTo(`/tasks/${task.id}`)}
+                        type="button"
+                      >
+                        <div className="font-semibold text-ink">{task.title}</div>
+                        <p className="mt-1 line-clamp-2 text-sm text-slate-600">
+                          {task.description || "No description"}
+                        </p>
+                      </button>
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <StatusBadge status={task.status} />
+                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                          {getMemberName(members, task.assignee_id)}
+                        </span>
+                      </div>
+                      <div className="mt-3 text-xs text-slate-500">Updated {formatDate(task.updated_at || task.created_at)}</div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+
+          <Pagination pagination={taskPagination} onPageChange={setTaskPage} />
+        </div>
+
+        <div className="space-y-4">
+          <SectionCard title="Tao cong viec" eyebrow="Board action">
+            <form className="space-y-4" id="create-task-form" onSubmit={handleCreateTask}>
+              <AlertBanner
+                message={taskMessage}
+                tone={taskMessage === "Task created successfully." ? "success" : "error"}
               />
-            </label>
 
-            <label className="block space-y-2">
-              <span className="text-sm font-semibold text-slate-700">Description</span>
-              <textarea
-                className="min-h-28 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-tide disabled:opacity-60"
-                disabled={!canManageProject}
-                onChange={(event) =>
-                  setProjectForm((prev) => ({ ...prev, description: event.target.value }))
-                }
-                value={projectForm.description}
-              />
-            </label>
-
-            <div className="flex flex-wrap gap-3">
-              <button
-                className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-                disabled={!canManageProject || projectSubmitting}
-                type="submit"
-              >
-                {projectSubmitting ? "Saving..." : "Update project"}
-              </button>
-              <button
-                className="rounded-2xl border border-red-300 px-5 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={!canDeleteProject}
-                onClick={handleDeleteProject}
-                type="button"
-              >
-                Delete project
-              </button>
-            </div>
-          </form>
-        </SectionCard>
-
-        <SectionCard
-          title="Members"
-          eyebrow="Team"
-          description="API hien tai add member theo user ID. Moi user co the lay ID cua minh o header sau khi dang nhap."
-        >
-          <form className="space-y-4" onSubmit={handleAddMember}>
-            <AlertBanner
-              message={memberMessage}
-              tone={
-                memberMessage === "Member added successfully." ||
-                memberMessage === "Member removed successfully."
-                  ? "success"
-                  : "error"
-              }
-            />
-
-            <div className="grid gap-4 md:grid-cols-[1fr_1fr_auto]">
               <label className="block space-y-2">
-                <span className="text-sm font-semibold text-slate-700">User ID</span>
+                <span className="text-sm font-semibold text-slate-700">Title</span>
                 <input
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-tide disabled:opacity-60"
+                  className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
                   disabled={!canManageProject}
-                  min="1"
-                  onChange={(event) => setMemberForm((prev) => ({ ...prev, user_id: event.target.value }))}
-                  placeholder="2"
+                  onChange={(event) => setTaskForm((prev) => ({ ...prev, title: event.target.value }))}
+                  placeholder="Connect realtime WebSocket"
                   required
-                  type="number"
-                  value={memberForm.user_id}
+                  value={taskForm.title}
                 />
               </label>
 
               <label className="block space-y-2">
-                <span className="text-sm font-semibold text-slate-700">Role in project</span>
-                <select
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-tide disabled:opacity-60"
+                <span className="text-sm font-semibold text-slate-700">Description</span>
+                <textarea
+                  className="min-h-20 w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
                   disabled={!canManageProject}
                   onChange={(event) =>
-                    setMemberForm((prev) => ({ ...prev, role_in_project: event.target.value }))
+                    setTaskForm((prev) => ({ ...prev, description: event.target.value }))
                   }
-                  value={memberForm.role_in_project}
+                  placeholder="Short summary"
+                  value={taskForm.description}
+                />
+              </label>
+
+              <label className="block space-y-2">
+                <span className="text-sm font-semibold text-slate-700">Nguoi phu trach</span>
+                <select
+                  className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
+                  disabled={!canManageProject}
+                  onChange={(event) => setTaskForm((prev) => ({ ...prev, assignee_id: event.target.value }))}
+                  value={taskForm.assignee_id}
                 >
-                  <option value="member">Member</option>
-                  <option value="admin">Admin</option>
+                  <option value="">Unassigned</option>
+                  {members.map((member) => (
+                    <option key={member.user_id} value={member.user_id}>
+                      {member.name} (#{member.user_id})
+                    </option>
+                  ))}
                 </select>
               </label>
 
-              <div className="flex items-end">
-                <button
-                  className="rounded-2xl bg-ember px-5 py-3 text-sm font-semibold text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={!canManageProject || memberSubmitting}
-                  type="submit"
-                >
-                  {memberSubmitting ? "Adding..." : "Add member"}
-                </button>
-              </div>
-            </div>
-          </form>
-
-          <div className="mt-5 grid gap-3">
-            {members.map((member) => (
-              <article
-                className="rounded-[24px] border border-slate-200 bg-white/80 px-4 py-4"
-                key={member.user_id}
-              >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <div className="text-lg font-semibold text-ink">{member.name}</div>
-                    <div className="text-sm text-slate-600">{member.email}</div>
-                    <div className="mt-2 flex flex-wrap gap-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      <span>User ID: {member.user_id}</span>
-                      <span>{formatRoleLabel(member.role_in_project)}</span>
-                      <span>Joined: {formatDate(member.joined_at)}</span>
-                    </div>
-                  </div>
-
-                  <button
-                    className="rounded-full border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!canManageProject || member.role_in_project === "owner"}
-                    onClick={() => handleRemoveMember(member.user_id)}
-                    type="button"
-                  >
-                    Remove
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-        </SectionCard>
-      </div>
-
-      <SectionCard
-        title="Tasks"
-        eyebrow="Execution"
-        description="Task moi co the duoc assign cho member trong project. Member thuong se chi duoc update status cua task duoc giao."
-      >
-        <form className="space-y-4" onSubmit={handleCreateTask}>
-          <AlertBanner
-            message={taskMessage}
-            tone={taskMessage === "Task created successfully." ? "success" : "error"}
-          />
-
-          <div className="grid gap-4 xl:grid-cols-[1fr_1fr_0.8fr_auto]">
-            <label className="block space-y-2">
-              <span className="text-sm font-semibold text-slate-700">Title</span>
-              <input
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-tide disabled:opacity-60"
-                disabled={!canManageProject}
-                onChange={(event) => setTaskForm((prev) => ({ ...prev, title: event.target.value }))}
-                placeholder="Design auth API"
-                required
-                value={taskForm.title}
-              />
-            </label>
-
-            <label className="block space-y-2">
-              <span className="text-sm font-semibold text-slate-700">Description</span>
-              <input
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-tide disabled:opacity-60"
-                disabled={!canManageProject}
-                onChange={(event) =>
-                  setTaskForm((prev) => ({ ...prev, description: event.target.value }))
-                }
-                placeholder="Short summary"
-                value={taskForm.description}
-              />
-            </label>
-
-            <label className="block space-y-2">
-              <span className="text-sm font-semibold text-slate-700">Assignee</span>
-              <select
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-tide disabled:opacity-60"
-                disabled={!canManageProject}
-                onChange={(event) => setTaskForm((prev) => ({ ...prev, assignee_id: event.target.value }))}
-                value={taskForm.assignee_id}
-              >
-                <option value="">Unassigned</option>
-                {members.map((member) => (
-                  <option key={member.user_id} value={member.user_id}>
-                    {member.name} (#{member.user_id})
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <div className="flex items-end">
               <button
-                className="rounded-2xl bg-moss px-5 py-3 text-sm font-semibold text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+                className="w-full rounded-md bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-400"
                 disabled={!canManageProject || taskSubmitting}
                 type="submit"
               >
-                {taskSubmitting ? "Creating..." : "Create task"}
+                {taskSubmitting ? "Dang tao..." : "Tao cong viec"}
               </button>
-            </div>
-          </div>
-        </form>
+            </form>
+          </SectionCard>
 
-        <div className="mt-5 space-y-4">
-          {tasks.length === 0 ? (
-            <EmptyState
-              description="Project nay chua co task nao. Tao task o form ben tren."
-              title="No tasks yet"
-            />
-          ) : (
-            <>
-              {tasks.map((task) => (
-                <article
-                  className="rounded-[28px] border border-slate-200 bg-white/80 px-5 py-5 transition hover:-translate-y-0.5 hover:shadow-lg"
-                  key={task.id}
+          <SectionCard title="Thanh vien" eyebrow="Project team">
+            <form className="space-y-3" onSubmit={handleAddMember}>
+              <AlertBanner
+                message={memberMessage}
+                tone={
+                  memberMessage === "Member added successfully." ||
+                  memberMessage === "Member removed successfully."
+                    ? "success"
+                    : "error"
+                }
+              />
+              <div className="grid grid-cols-[1fr_auto] gap-2">
+                <input
+                  className="rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
+                  disabled={!canManageProject}
+                  min="1"
+                  onChange={(event) => setMemberForm((prev) => ({ ...prev, user_id: event.target.value }))}
+                  placeholder="User ID"
+                  required
+                  type="number"
+                  value={memberForm.user_id}
+                />
+                <button
+                  className="rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+                  disabled={!canManageProject || memberSubmitting}
+                  type="submit"
                 >
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-3">
-                        <h3 className="text-2xl text-ink">{task.title}</h3>
-                        <StatusBadge status={task.status} />
-                      </div>
-                      <p className="text-sm text-slate-600">{task.description || "No description"}</p>
-                      <div className="flex flex-wrap gap-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        <span>Task ID: {task.id}</span>
-                        <span>Assignee: {task.assignee_id || "None"}</span>
-                        <span>Created: {formatDate(task.created_at)}</span>
-                      </div>
-                    </div>
+                  Add
+                </button>
+              </div>
+              <select
+                className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
+                disabled={!canManageProject}
+                onChange={(event) =>
+                  setMemberForm((prev) => ({ ...prev, role_in_project: event.target.value }))
+                }
+                value={memberForm.role_in_project}
+              >
+                <option value="member">Member</option>
+                <option value="admin">Admin</option>
+              </select>
+            </form>
 
+            <div className="mt-4 space-y-3">
+              {members.map((member) => (
+                <div
+                  className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-3"
+                  key={member.user_id}
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-ink">{member.name}</div>
+                    <div className="truncate text-xs text-slate-500">#{member.user_id} {member.email}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <RoleChip role={member.role_in_project} />
                     <button
-                      className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
-                      onClick={() => navigateTo(`/tasks/${task.id}`)}
+                      className="rounded-md border border-red-200 px-2 py-1 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={!canManageProject || member.role_in_project === "owner"}
+                      onClick={() => handleRemoveMember(member.user_id)}
                       type="button"
                     >
-                      Open task
+                      Remove
                     </button>
                   </div>
-                </article>
+                </div>
               ))}
-
-              <Pagination pagination={taskPagination} onPageChange={setTaskPage} />
-            </>
-          )}
+            </div>
+          </SectionCard>
         </div>
+      </div>
+
+      <SectionCard title="Project settings" eyebrow="Management">
+        <form className="grid gap-4 lg:grid-cols-[1fr_1.4fr_auto]" onSubmit={handleUpdateProject}>
+          <AlertBanner
+            message={projectMessage}
+            tone={projectMessage === "Project updated successfully." ? "success" : "error"}
+          />
+
+          <label className="block space-y-2">
+            <span className="text-sm font-semibold text-slate-700">Project name</span>
+            <input
+              className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
+              disabled={!canManageProject}
+              onChange={(event) => setProjectForm((prev) => ({ ...prev, name: event.target.value }))}
+              required
+              value={projectForm.name}
+            />
+          </label>
+
+          <label className="block space-y-2">
+            <span className="text-sm font-semibold text-slate-700">Description</span>
+            <input
+              className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
+              disabled={!canManageProject}
+              onChange={(event) =>
+                setProjectForm((prev) => ({ ...prev, description: event.target.value }))
+              }
+              value={projectForm.description}
+            />
+          </label>
+
+          <div className="flex items-end gap-2">
+            <button
+              className="rounded-md bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+              disabled={!canManageProject || projectSubmitting}
+              type="submit"
+            >
+              {projectSubmitting ? "Saving..." : "Save"}
+            </button>
+            <button
+              className="rounded-md border border-red-300 px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!canDeleteProject}
+              onClick={handleDeleteProject}
+              type="button"
+            >
+              Delete
+            </button>
+          </div>
+        </form>
       </SectionCard>
     </div>
   );

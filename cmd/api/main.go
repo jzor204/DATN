@@ -86,7 +86,7 @@ func main() {
 
 	authHandler := handler.NewAuthHandler(authUsecase)
 	projectHandler := handler.NewProjectHandler(projectUsecase, realtimeHub)
-	taskHandler := handler.NewTaskHandler(taskUsecase, realtimeHub)
+	taskHandler := handler.NewTaskHandler(taskUsecase, projectUsecase, realtimeHub)
 	commentHandler := handler.NewCommentHandler(commentUsecase, taskUsecase, realtimeHub)
 	wsHandler := handler.NewWebSocketHandler(realtimeHub, jwtService, projectUsecase, taskUsecase)
 

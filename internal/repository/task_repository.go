@@ -134,6 +134,63 @@ func (r *TaskRepository) ListByProject(ctx context.Context, projectID uint, page
 	return result, total, nil
 }
 
+func (r *TaskRepository) ListAssignedToUser(
+	ctx context.Context,
+	userID uint,
+	projectID *uint,
+	status string,
+	requireMembership bool,
+	page int,
+	pageSize int,
+) ([]*domain.Task, int64, error) {
+	var (
+		rows  []taskModel
+		total int64
+	)
+
+	buildQuery := func() *gorm.DB {
+		query := r.db.WithContext(ctx).
+			Model(&taskModel{}).
+			Where("tasks.assignee_id = ?", userID)
+
+		if requireMembership {
+			query = query.Joins(
+				"JOIN project_members ON project_members.project_id = tasks.project_id AND project_members.user_id = ?",
+				userID,
+			)
+		}
+
+		if projectID != nil {
+			query = query.Where("tasks.project_id = ?", *projectID)
+		}
+
+		if status != "" {
+			query = query.Where("tasks.status = ?", status)
+		}
+
+		return query
+	}
+
+	if err := buildQuery().Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	if err := buildQuery().
+		Order("tasks.updated_at DESC, tasks.id DESC").
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		Find(&rows).Error; err != nil {
+		return nil, 0, err
+	}
+
+	result := make([]*domain.Task, 0, len(rows))
+	for i := range rows {
+		result = append(result, mapTaskModelToDomain(rows[i]))
+	}
+
+	return result, total, nil
+}
+
 func mapTaskModelToDomain(row taskModel) *domain.Task {
 	return &domain.Task{
 		ID:          row.ID,

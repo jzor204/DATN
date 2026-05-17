@@ -860,6 +860,90 @@
                 }
             }
         },
+        "/tasks/me": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List tasks assigned to current user",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tasks"
+                ],
+                "summary": "List my tasks",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Project ID",
+                        "name": "project_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search member candidates by name, email, or user ID",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Task status, accepts todo, in_progress, in-progress, done, or candidates for member candidate search",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.TaskListSuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/tasks/{id}": {
             "get": {
                 "security": [
@@ -1494,6 +1578,60 @@
                 }
             }
         },
+        "dto.ProjectMemberCandidateData": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string",
+                    "example": "c@example.com"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Tran Van C"
+                },
+                "role": {
+                    "type": "string",
+                    "example": "member"
+                },
+                "user_id": {
+                    "type": "integer",
+                    "example": 4
+                }
+            }
+        },
+        "dto.ProjectMemberCandidateListPayload": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.ProjectMemberCandidateData"
+                    }
+                },
+                "pagination": {
+                    "$ref": "#/definitions/dto.SwaggerPaginationResponse"
+                }
+            }
+        },
+        "dto.ProjectMemberCandidateListSuccessResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/dto.ProjectMemberCandidateListPayload"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "get member candidates success"
+                },
+                "success": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
         "dto.ProjectMemberSuccessResponse": {
             "type": "object",
             "properties": {
@@ -1599,6 +1737,10 @@
                 "project_id": {
                     "type": "integer",
                     "example": 1
+                },
+                "project_name": {
+                    "type": "string",
+                    "example": "Website Redesign"
                 },
                 "status": {
                     "type": "string",
