@@ -50,7 +50,7 @@ function normalizeStatus(status) {
 
 function getMemberName(members, userId) {
   const member = members.find((item) => Number(item.user_id) === Number(userId));
-  return member?.name || (userId ? `User #${userId}` : "Unassigned");
+  return member?.name || (userId ? `User #${userId}` : "Chưa gán");
 }
 
 function RoleChip({ role }) {
@@ -235,7 +235,7 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
         description: projectForm.description.trim()
       });
       await reloadProjectOnly();
-      setProjectMessage("Project updated successfully.");
+      setProjectMessage("Cập nhật project thành công.");
     } catch (err) {
       setProjectMessage(err.message);
     } finally {
@@ -244,7 +244,7 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
   }
 
   async function handleDeleteProject() {
-    const confirmed = window.confirm("Delete this project?");
+    const confirmed = window.confirm("Xóa project này?");
     if (!confirmed) {
       return;
     }
@@ -269,7 +269,7 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
       });
       setMemberForm(initialMemberForm);
       await reloadMembers();
-      setMemberMessage("Member added successfully.");
+      setMemberMessage("Thêm thành viên thành công.");
     } catch (err) {
       setMemberMessage(err.message);
     } finally {
@@ -278,7 +278,7 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
   }
 
   async function handleRemoveMember(userId) {
-    const confirmed = window.confirm(`Remove user ${userId} from project?`);
+    const confirmed = window.confirm(`Xóa user ${userId} khỏi project?`);
     if (!confirmed) {
       return;
     }
@@ -286,7 +286,7 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
     try {
       await removeProjectMember(projectId, userId);
       await reloadMembers();
-      setMemberMessage("Member removed successfully.");
+      setMemberMessage("Xóa thành viên thành công.");
     } catch (err) {
       setMemberMessage(err.message);
     }
@@ -310,7 +310,7 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
 
       await createTask(projectId, payload);
       setTaskForm(initialTaskForm);
-      setTaskMessage("Task created successfully.");
+      setTaskMessage("Tạo công việc thành công.");
 
       if (taskPage !== 1) {
         setTaskPage(1);
@@ -325,7 +325,7 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
   }
 
   if (loading) {
-    return <LoadingScreen label="Loading project workspace..." />;
+    return <LoadingScreen label="Đang tải workspace dự án..." />;
   }
 
   if (!project) {
@@ -337,19 +337,19 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
             onClick={() => navigateTo("/projects")}
             type="button"
           >
-            Back to projects
+            Quay lại danh sách dự án
           </button>
         }
-        description="Project khong ton tai hoac ban khong co quyen xem."
-        title="Project not found"
+        description="Project không tồn tại hoặc bạn không có quyền xem."
+        title="Không tìm thấy project"
       />
     );
   }
 
   const boardColumns = [
-    { key: "todo", title: "todo", hint: "Can lam" },
-    { key: "in_progress", title: "in-progress", hint: "Dang lam" },
-    { key: "done", title: "done", hint: "Hoan thanh" }
+    { key: "todo", title: "Cần làm", hint: "Việc cần xử lý" },
+    { key: "in_progress", title: "Đang làm", hint: "Đang thực hiện" },
+    { key: "done", title: "Hoàn thành", hint: "Đã hoàn tất" }
   ];
 
   return (
@@ -357,13 +357,13 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
       <div className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white px-5 py-5 shadow-panel xl:flex-row xl:items-start xl:justify-between">
         <div>
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Du an / {project.name}
+            Dự án / {project.name}
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-3">
             <h1 className="text-2xl font-semibold text-ink">{project.name}</h1>
             <RoleChip role={currentProjectMember?.role_in_project || "viewer"} />
           </div>
-          <p className="mt-2 max-w-3xl text-sm text-slate-600">{project.description || "No description"}</p>
+          <p className="mt-2 max-w-3xl text-sm text-slate-600">{project.description || "Chưa có mô tả"}</p>
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -372,7 +372,7 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
             onClick={() => navigateTo("/projects")}
             type="button"
           >
-            Back
+            Quay lại
           </button>
           <button
             className="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-400"
@@ -380,7 +380,7 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
             form="create-task-form"
             type="submit"
           >
-            Tao cong viec
+            Tạo công việc
           </button>
         </div>
       </div>
@@ -388,10 +388,10 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
       <AlertBanner message={pageError} />
 
       <div className="flex flex-wrap items-center gap-2">
-        {["Board", "Tasks", "Members"].map((tab) => (
+        {["Bảng", "Công việc", "Thành viên"].map((tab) => (
           <span
             className={`rounded-md px-3 py-2 text-sm font-semibold ${
-              tab === "Board" ? "bg-blue-50 text-blue-700" : "bg-white text-slate-600"
+              tab === "Bảng" ? "bg-blue-50 text-blue-700" : "bg-white text-slate-600"
             } border border-slate-200`}
             key={tab}
           >
@@ -399,7 +399,7 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
           </span>
         ))}
         <span className="ml-auto rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-          Realtime project scope
+          Realtime scope dự án
         </span>
       </div>
 
@@ -421,7 +421,7 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
                 <div className="space-y-3">
                   {groupedTasks[column.key].length === 0 ? (
                     <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-slate-500">
-                      No tasks
+                      Chưa có công việc
                     </div>
                   ) : null}
 
@@ -437,7 +437,7 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
                       >
                         <div className="font-semibold text-ink">{task.title}</div>
                         <p className="mt-1 line-clamp-2 text-sm text-slate-600">
-                          {task.description || "No description"}
+                          {task.description || "Chưa có mô tả"}
                         </p>
                       </button>
                       <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -446,7 +446,7 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
                           {getMemberName(members, task.assignee_id)}
                         </span>
                       </div>
-                      <div className="mt-3 text-xs text-slate-500">Updated {formatDate(task.updated_at || task.created_at)}</div>
+                      <div className="mt-3 text-xs text-slate-500">Cập nhật {formatDate(task.updated_at || task.created_at)}</div>
                     </article>
                   ))}
                 </div>
@@ -458,47 +458,47 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
         </div>
 
         <div className="space-y-4">
-          <SectionCard title="Tao cong viec" eyebrow="Board action">
+          <SectionCard title="Tạo công việc" eyebrow="Thao tác bảng">
             <form className="space-y-4" id="create-task-form" onSubmit={handleCreateTask}>
               <AlertBanner
                 message={taskMessage}
-                tone={taskMessage === "Task created successfully." ? "success" : "error"}
+                tone={taskMessage === "Tạo công việc thành công." ? "success" : "error"}
               />
 
               <label className="block space-y-2">
-                <span className="text-sm font-semibold text-slate-700">Title</span>
+                <span className="text-sm font-semibold text-slate-700">Tiêu đề</span>
                 <input
                   className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
                   disabled={!canManageProject}
                   onChange={(event) => setTaskForm((prev) => ({ ...prev, title: event.target.value }))}
-                  placeholder="Connect realtime WebSocket"
+                  placeholder="Kết nối realtime WebSocket"
                   required
                   value={taskForm.title}
                 />
               </label>
 
               <label className="block space-y-2">
-                <span className="text-sm font-semibold text-slate-700">Description</span>
+                <span className="text-sm font-semibold text-slate-700">Mô tả</span>
                 <textarea
                   className="min-h-20 w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
                   disabled={!canManageProject}
                   onChange={(event) =>
                     setTaskForm((prev) => ({ ...prev, description: event.target.value }))
                   }
-                  placeholder="Short summary"
+                  placeholder="Tóm tắt ngắn"
                   value={taskForm.description}
                 />
               </label>
 
               <label className="block space-y-2">
-                <span className="text-sm font-semibold text-slate-700">Nguoi phu trach</span>
+                <span className="text-sm font-semibold text-slate-700">Người phụ trách</span>
                 <select
                   className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
                   disabled={!canManageProject}
                   onChange={(event) => setTaskForm((prev) => ({ ...prev, assignee_id: event.target.value }))}
                   value={taskForm.assignee_id}
                 >
-                  <option value="">Unassigned</option>
+                  <option value="">Chưa gán</option>
                   {members.map((member) => (
                     <option key={member.user_id} value={member.user_id}>
                       {member.name} (#{member.user_id})
@@ -512,18 +512,18 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
                 disabled={!canManageProject || taskSubmitting}
                 type="submit"
               >
-                {taskSubmitting ? "Dang tao..." : "Tao cong viec"}
+                {taskSubmitting ? "Đang tạo..." : "Tạo công việc"}
               </button>
             </form>
           </SectionCard>
 
-          <SectionCard title="Thanh vien" eyebrow="Project team">
+          <SectionCard title="Thành viên" eyebrow="Nhóm project">
             <form className="space-y-3" onSubmit={handleAddMember}>
               <AlertBanner
                 message={memberMessage}
                 tone={
-                  memberMessage === "Member added successfully." ||
-                  memberMessage === "Member removed successfully."
+                  memberMessage === "Thêm thành viên thành công." ||
+                  memberMessage === "Xóa thành viên thành công."
                     ? "success"
                     : "error"
                 }
@@ -544,7 +544,7 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
                   disabled={!canManageProject || memberSubmitting}
                   type="submit"
                 >
-                  Add
+                  Thêm
                 </button>
               </div>
               <select
@@ -555,8 +555,8 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
                 }
                 value={memberForm.role_in_project}
               >
-                <option value="member">Member</option>
-                <option value="admin">Admin</option>
+                <option value="member">Thành viên</option>
+                <option value="admin">Quản trị</option>
               </select>
             </form>
 
@@ -578,7 +578,7 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
                       onClick={() => handleRemoveMember(member.user_id)}
                       type="button"
                     >
-                      Remove
+                      Xóa
                     </button>
                   </div>
                 </div>
@@ -588,15 +588,15 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
         </div>
       </div>
 
-      <SectionCard title="Project settings" eyebrow="Management">
+      <SectionCard title="Cài đặt project" eyebrow="Quản lý">
         <form className="grid gap-4 lg:grid-cols-[1fr_1.4fr_auto]" onSubmit={handleUpdateProject}>
           <AlertBanner
             message={projectMessage}
-            tone={projectMessage === "Project updated successfully." ? "success" : "error"}
+            tone={projectMessage === "Cập nhật project thành công." ? "success" : "error"}
           />
 
           <label className="block space-y-2">
-            <span className="text-sm font-semibold text-slate-700">Project name</span>
+            <span className="text-sm font-semibold text-slate-700">Tên project</span>
             <input
               className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
               disabled={!canManageProject}
@@ -607,7 +607,7 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
           </label>
 
           <label className="block space-y-2">
-            <span className="text-sm font-semibold text-slate-700">Description</span>
+            <span className="text-sm font-semibold text-slate-700">Mô tả</span>
             <input
               className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
               disabled={!canManageProject}
@@ -624,7 +624,7 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
               disabled={!canManageProject || projectSubmitting}
               type="submit"
             >
-              {projectSubmitting ? "Saving..." : "Save"}
+              {projectSubmitting ? "Đang lưu..." : "Lưu"}
             </button>
             <button
               className="rounded-md border border-red-300 px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -632,7 +632,7 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
               onClick={handleDeleteProject}
               type="button"
             >
-              Delete
+              Xóa
             </button>
           </div>
         </form>

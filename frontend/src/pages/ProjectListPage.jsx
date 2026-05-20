@@ -6,7 +6,7 @@ import LoadingScreen from "../components/LoadingScreen";
 import Pagination from "../components/Pagination";
 import SectionCard from "../components/SectionCard";
 import { useRealtimeSubscription } from "../hooks/useRealtimeSubscription";
-import { formatDate } from "../utils/format";
+import { formatDate, formatRoleLabel } from "../utils/format";
 import { navigateTo } from "../utils/router";
 
 const initialForm = {
@@ -148,9 +148,9 @@ export default function ProjectListPage({ currentUser }) {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-ink">Du an</h1>
+          <h1 className="text-2xl font-semibold text-ink">Dự án</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Quan ly cac project ban co quyen truy cap va theo doi cap nhat realtime.
+            Quản lý các project bạn có quyền truy cập và theo dõi cập nhật realtime.
           </p>
         </div>
         <button
@@ -158,19 +158,19 @@ export default function ProjectListPage({ currentUser }) {
           onClick={() => setRefreshKey((prev) => prev + 1)}
           type="button"
         >
-          Refresh
+          Làm mới
         </button>
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
-        <MetricCard label="Tong du an" value={pagination.total || projects.length} hint="Theo quyen truy cap" />
-        <MetricCard label="Dang hoat dong" value={projects.length} hint="Trang hien tai" />
-        <MetricCard label="Cong viec cua toi" value="--" hint="Theo API task hien co" />
-        <MetricCard label="Cap nhat realtime" value="On" hint="WebSocket projects scope" />
+        <MetricCard label="Tổng dự án" value={pagination.total || projects.length} hint="Theo quyền truy cập" />
+        <MetricCard label="Đang hoạt động" value={projects.length} hint="Trang hiện tại" />
+        <MetricCard label="Công việc của tôi" value="--" hint="Theo API task hiện có" />
+        <MetricCard label="Cập nhật realtime" value="On" hint="WebSocket projects scope" />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[360px_1fr]">
-        <SectionCard title="Tao du an" eyebrow="Workspace">
+        <SectionCard title="Tạo dự án" eyebrow="Workspace">
           <form className="space-y-4" onSubmit={handleCreateProject}>
             <AlertBanner
               message={formMessage}
@@ -178,7 +178,7 @@ export default function ProjectListPage({ currentUser }) {
             />
 
             <label className="block space-y-2">
-              <span className="text-sm font-semibold text-slate-700">Ten du an</span>
+              <span className="text-sm font-semibold text-slate-700">Tên dự án</span>
               <input
                 className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
@@ -189,11 +189,11 @@ export default function ProjectListPage({ currentUser }) {
             </label>
 
             <label className="block space-y-2">
-              <span className="text-sm font-semibold text-slate-700">Mo ta</span>
+              <span className="text-sm font-semibold text-slate-700">Mô tả</span>
               <textarea
                 className="min-h-24 w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))}
-                placeholder="Muc tieu ngan gon cua project"
+                placeholder="Mục tiêu ngắn gọn của project"
                 value={form.description}
               />
             </label>
@@ -203,24 +203,24 @@ export default function ProjectListPage({ currentUser }) {
               disabled={submitting}
               type="submit"
             >
-              {submitting ? "Dang tao..." : "Tao du an"}
+              {submitting ? "Đang tạo..." : "Tạo dự án"}
             </button>
           </form>
 
           <div className="mt-4 rounded-lg bg-slate-50 px-4 py-3 text-xs text-slate-500">
-            User ID cua ban: <span className="font-semibold text-slate-700">#{currentUser.id}</span>
+            User ID của bạn: <span className="font-semibold text-slate-700">#{currentUser.id}</span>
           </div>
         </SectionCard>
 
-        <SectionCard title="Danh sach du an" eyebrow="Listing">
+        <SectionCard title="Danh sách dự án" eyebrow="Danh sách">
           <AlertBanner message={pageError} />
 
-          {loading ? <LoadingScreen label="Loading projects..." /> : null}
+          {loading ? <LoadingScreen label="Đang tải dự án..." /> : null}
 
           {!loading && projects.length === 0 ? (
             <EmptyState
-              description="Ban chua co project nao. Tao project dau tien de bat dau."
-              title="No projects yet"
+              description="Bạn chưa có project nào. Tạo project đầu tiên để bắt đầu."
+              title="Chưa có dự án"
             />
           ) : null}
 
@@ -230,11 +230,11 @@ export default function ProjectListPage({ currentUser }) {
                 <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
                   <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                     <tr>
-                      <th className="px-4 py-3">Ten du an</th>
-                      <th className="px-4 py-3">Vai tro</th>
+                      <th className="px-4 py-3">Tên dự án</th>
+                      <th className="px-4 py-3">Vai trò</th>
                       <th className="px-4 py-3">Owner</th>
-                      <th className="px-4 py-3">Cap nhat luc</th>
-                      <th className="px-4 py-3 text-right">Hanh dong</th>
+                      <th className="px-4 py-3">Cập nhật lúc</th>
+                      <th className="px-4 py-3 text-right">Hành động</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
@@ -243,7 +243,7 @@ export default function ProjectListPage({ currentUser }) {
                         <td className="px-4 py-4">
                           <div className="font-semibold text-ink">{project.name}</div>
                           <div className="mt-1 max-w-xl truncate text-xs text-slate-500">
-                            {project.description || "No description"}
+                            {project.description || "Chưa có mô tả"}
                           </div>
                         </td>
                         <td className="px-4 py-4">
@@ -252,7 +252,7 @@ export default function ProjectListPage({ currentUser }) {
                               getProjectRole(project, currentUser)
                             )}`}
                           >
-                            {getProjectRole(project, currentUser)}
+                            {formatRoleLabel(getProjectRole(project, currentUser))}
                           </span>
                         </td>
                         <td className="px-4 py-4 text-slate-600">#{project.owner_id}</td>
@@ -263,7 +263,7 @@ export default function ProjectListPage({ currentUser }) {
                             onClick={() => navigateTo(`/projects/${project.id}`)}
                             type="button"
                           >
-                            Open
+                            Mở
                           </button>
                         </td>
                       </tr>

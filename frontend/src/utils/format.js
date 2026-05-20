@@ -16,15 +16,15 @@ export function formatDate(value) {
 
 export function formatTaskStatus(status) {
   if (status === "in_progress" || status === "in-progress") {
-    return "in-progress";
+    return "Đang làm";
   }
   if (status === "todo") {
-    return "todo";
+    return "Cần làm";
   }
   if (status === "done") {
-    return "done";
+    return "Hoàn thành";
   }
-  return status || "Unknown";
+  return status || "Không rõ";
 }
 
 export function toTaskStatusInput(status) {
@@ -37,6 +37,19 @@ export function toTaskStatusInput(status) {
 export function formatRoleLabel(role) {
   if (!role) {
     return "--";
+  }
+
+  const roleLabels = {
+    admin: "Quản trị",
+    member: "Thành viên",
+    owner: "Chủ sở hữu",
+    viewer: "Người xem",
+    admin_global: "Quản trị hệ thống",
+    "admin-global": "Quản trị hệ thống"
+  };
+
+  if (roleLabels[role]) {
+    return roleLabels[role];
   }
 
   return role

@@ -35,20 +35,20 @@ export default function RegisterPage({ notice, onAuthSuccess }) {
       <div className="w-full max-w-md">
         <div className="mb-6 text-center">
           <div className="text-xl font-semibold text-ink">Task Management</div>
-          <div className="mt-2 text-sm text-slate-500">Tao tai khoan de vao workspace</div>
+          <div className="mt-2 text-sm text-slate-500">Tạo tài khoản để vào workspace</div>
         </div>
 
-        <SectionCard title="Dang ky" description="Nguoi dung moi se mac dinh o vai tro member.">
+        <SectionCard title="Đăng ký" description="Người dùng mới sẽ mặc định ở vai trò thành viên.">
           <form className="space-y-4" onSubmit={handleSubmit}>
             <AlertBanner message={notice} tone="info" />
             <AlertBanner message={error} />
 
             <label className="block space-y-2">
-              <span className="text-sm font-semibold text-slate-700">Ho ten</span>
+              <span className="text-sm font-semibold text-slate-700">Họ tên</span>
               <input
                 className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-                placeholder="Le Anh"
+                placeholder="Lê Anh"
                 required
                 value={form.name}
               />
@@ -67,17 +67,17 @@ export default function RegisterPage({ notice, onAuthSuccess }) {
             </label>
 
             <label className="block space-y-2">
-              <span className="text-sm font-semibold text-slate-700">Mat khau</span>
+              <span className="text-sm font-semibold text-slate-700">Mật khẩu</span>
               <input
                 className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 minLength={6}
                 onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
-                placeholder="Toi thieu 6 ky tu"
+                placeholder="Tối thiểu 6 ký tự"
                 required
                 type="password"
                 value={form.password}
               />
-              <span className="text-xs text-slate-500">Mat khau toi thieu 6 ky tu.</span>
+              <span className="text-xs text-slate-500">Mật khẩu tối thiểu 6 ký tự.</span>
             </label>
 
             <button
@@ -85,18 +85,18 @@ export default function RegisterPage({ notice, onAuthSuccess }) {
               disabled={submitting}
               type="submit"
             >
-              {submitting ? "Dang tao..." : "Dang ky"}
+              {submitting ? "Đang tạo..." : "Đăng ký"}
             </button>
           </form>
 
           <div className="mt-5 flex items-center justify-between gap-3 text-sm text-slate-600">
-            <span>Da co tai khoan?</span>
+            <span>Đã có tài khoản?</span>
             <button
               className="font-semibold text-blue-600"
               onClick={() => navigateTo("/login")}
               type="button"
             >
-              Dang nhap
+              Đăng nhập
             </button>
           </div>
         </SectionCard>

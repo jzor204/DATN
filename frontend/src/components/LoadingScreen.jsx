@@ -1,4 +1,4 @@
-export default function LoadingScreen({ label = "Loading..." }) {
+export default function LoadingScreen({ label = "Đang tải..." }) {
   return (
     <div className="flex min-h-[320px] items-center justify-center rounded-lg border border-slate-200 bg-white shadow-panel">
       <div className="flex items-center gap-3 text-sm font-semibold text-slate-700">

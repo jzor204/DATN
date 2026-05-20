@@ -34,7 +34,7 @@ const initialCommentPagination = {
 
 function getMemberName(members, userId) {
   const member = members.find((item) => Number(item.user_id) === Number(userId));
-  return member?.name || (userId ? `User #${userId}` : "Unassigned");
+  return member?.name || (userId ? `User #${userId}` : "Chưa gán");
 }
 
 function MetadataRow({ label, value }) {
@@ -237,13 +237,13 @@ export default function TaskDetailPage({ currentUser, taskId }) {
       }
 
       if (Object.keys(payload).length === 0) {
-        setTaskMessage("No changes detected.");
+        setTaskMessage("Không có thay đổi.");
         return;
       }
 
       await updateTask(taskId, payload);
       await reloadTaskWorkspace();
-      setTaskMessage("Task updated successfully.");
+      setTaskMessage("Cập nhật công việc thành công.");
     } catch (err) {
       setTaskMessage(err.message);
     } finally {
@@ -256,7 +256,7 @@ export default function TaskDetailPage({ currentUser, taskId }) {
       return;
     }
 
-    const confirmed = window.confirm("Delete this task?");
+    const confirmed = window.confirm("Xóa công việc này?");
     if (!confirmed) {
       return;
     }
@@ -279,7 +279,7 @@ export default function TaskDetailPage({ currentUser, taskId }) {
         content: newComment.trim()
       });
       setNewComment("");
-      setCommentMessage("Comment created successfully.");
+      setCommentMessage("Tạo bình luận thành công.");
 
       if (commentPage !== 1) {
         setCommentPage(1);
@@ -300,7 +300,7 @@ export default function TaskDetailPage({ currentUser, taskId }) {
       });
       setEditingCommentId(null);
       setEditingContent("");
-      setCommentMessage("Comment updated successfully.");
+      setCommentMessage("Cập nhật bình luận thành công.");
       await reloadTaskWorkspace();
     } catch (err) {
       setCommentMessage(err.message);
@@ -308,14 +308,14 @@ export default function TaskDetailPage({ currentUser, taskId }) {
   }
 
   async function handleDeleteComment(commentId) {
-    const confirmed = window.confirm("Delete this comment?");
+    const confirmed = window.confirm("Xóa bình luận này?");
     if (!confirmed) {
       return;
     }
 
     try {
       await deleteComment(commentId);
-      setCommentMessage("Comment deleted successfully.");
+      setCommentMessage("Xóa bình luận thành công.");
       await reloadTaskWorkspace();
     } catch (err) {
       setCommentMessage(err.message);
@@ -323,7 +323,7 @@ export default function TaskDetailPage({ currentUser, taskId }) {
   }
 
   if (loading) {
-    return <LoadingScreen label="Loading task detail..." />;
+    return <LoadingScreen label="Đang tải chi tiết công việc..." />;
   }
 
   if (!task || !project) {
@@ -335,11 +335,11 @@ export default function TaskDetailPage({ currentUser, taskId }) {
             onClick={() => navigateTo("/projects")}
             type="button"
           >
-            Back to projects
+            Quay lại danh sách dự án
           </button>
         }
-        description="Task khong ton tai hoac ban khong co quyen xem."
-        title="Task not found"
+        description="Task không tồn tại hoặc bạn không có quyền xem."
+        title="Không tìm thấy task"
       />
     );
   }
@@ -349,14 +349,14 @@ export default function TaskDetailPage({ currentUser, taskId }) {
       <div className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white px-5 py-5 shadow-panel xl:flex-row xl:items-start xl:justify-between">
         <div>
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Du an / {project.name} / Task #{task.id}
+            Dự án / {project.name} / Task #{task.id}
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-3">
             <h1 className="text-2xl font-semibold text-ink">{task.title}</h1>
             <StatusBadge status={task.status} />
           </div>
           <p className="mt-2 max-w-3xl text-sm text-slate-600">
-            {task.description || "No description"}
+            {task.description || "Chưa có mô tả"}
           </p>
         </div>
 
@@ -365,7 +365,7 @@ export default function TaskDetailPage({ currentUser, taskId }) {
           onClick={() => navigateTo(`/projects/${task.project_id}`)}
           type="button"
         >
-          Back to project
+          Quay lại project
         </button>
       </div>
 
@@ -373,36 +373,36 @@ export default function TaskDetailPage({ currentUser, taskId }) {
 
       <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
         <div className="space-y-6">
-          <SectionCard title="Noi dung cong viec" eyebrow="Task detail">
+          <SectionCard title="Nội dung công việc" eyebrow="Chi tiết task">
             <div className="rounded-lg bg-slate-50 px-4 py-4 text-sm leading-6 text-slate-700">
               {task.description ||
-                "Frontend subscribe theo scope projects/project/task va refetch lai du lieu khi nhan event realtime."}
+                "Frontend subscribe theo scope projects/project/task và tải lại dữ liệu khi nhận event realtime."}
             </div>
           </SectionCard>
 
           <SectionCard
-            title="Binh luan"
-            eyebrow="Discussion"
-            description={`Co ${commentPagination.total} comment trong task nay.`}
+            title="Bình luận"
+            eyebrow="Thảo luận"
+            description={`Có ${commentPagination.total} bình luận trong task này.`}
           >
             <form className="space-y-4" onSubmit={handleCreateComment}>
               <AlertBanner
                 message={commentMessage}
                 tone={
-                  commentMessage === "Comment created successfully." ||
-                  commentMessage === "Comment updated successfully." ||
-                  commentMessage === "Comment deleted successfully."
+                  commentMessage === "Tạo bình luận thành công." ||
+                  commentMessage === "Cập nhật bình luận thành công." ||
+                  commentMessage === "Xóa bình luận thành công."
                     ? "success"
                     : "error"
                 }
               />
 
               <label className="block space-y-2">
-                <span className="text-sm font-semibold text-slate-700">Viet binh luan</span>
+                <span className="text-sm font-semibold text-slate-700">Viết bình luận</span>
                 <textarea
                   className="min-h-24 w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                   onChange={(event) => setNewComment(event.target.value)}
-                  placeholder="Viet binh luan..."
+                  placeholder="Viết bình luận..."
                   required
                   value={newComment}
                 />
@@ -413,15 +413,15 @@ export default function TaskDetailPage({ currentUser, taskId }) {
                 disabled={commentSubmitting}
                 type="submit"
               >
-                {commentSubmitting ? "Dang gui..." : "Gui binh luan"}
+                {commentSubmitting ? "Đang gửi..." : "Gửi bình luận"}
               </button>
             </form>
 
             <div className="mt-5 space-y-3">
               {comments.length === 0 ? (
                 <EmptyState
-                  description="Task nay chua co comment nao."
-                  title="No comments yet"
+                  description="Task này chưa có bình luận nào."
+                  title="Chưa có bình luận"
                 />
               ) : null}
 
@@ -441,7 +441,7 @@ export default function TaskDetailPage({ currentUser, taskId }) {
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap gap-2 text-xs text-slate-500">
-                          <span className="font-semibold text-slate-700">Author #{comment.author_id}</span>
+                          <span className="font-semibold text-slate-700">Người viết #{comment.author_id}</span>
                           <span>{formatDate(comment.created_at)}</span>
                         </div>
 
@@ -466,7 +466,7 @@ export default function TaskDetailPage({ currentUser, taskId }) {
                             }}
                             type="button"
                           >
-                            Edit
+                            Sửa
                           </button>
                         ) : null}
 
@@ -477,7 +477,7 @@ export default function TaskDetailPage({ currentUser, taskId }) {
                               onClick={() => handleSaveComment(comment.id)}
                               type="button"
                             >
-                              Save
+                              Lưu
                             </button>
                             <button
                               className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700"
@@ -487,7 +487,7 @@ export default function TaskDetailPage({ currentUser, taskId }) {
                               }}
                               type="button"
                             >
-                              Cancel
+                              Hủy
                             </button>
                           </>
                         ) : null}
@@ -498,7 +498,7 @@ export default function TaskDetailPage({ currentUser, taskId }) {
                             onClick={() => handleDeleteComment(comment.id)}
                             type="button"
                           >
-                            Delete
+                            Xóa
                           </button>
                         ) : null}
                       </div>
@@ -513,42 +513,42 @@ export default function TaskDetailPage({ currentUser, taskId }) {
         </div>
 
         <div className="space-y-6">
-          <SectionCard title="Metadata" eyebrow="Task">
+          <SectionCard title="Thông tin task" eyebrow="Task">
             <div className="rounded-lg border border-slate-200 px-4">
-              <MetadataRow label="Trang thai" value={formatTaskStatus(task.status)} />
-              <MetadataRow label="Nguoi phu trach" value={getMemberName(members, task.assignee_id)} />
-              <MetadataRow label="Nguoi tao" value={`User #${task.created_by}`} />
+              <MetadataRow label="Trạng thái" value={formatTaskStatus(task.status)} />
+              <MetadataRow label="Người phụ trách" value={getMemberName(members, task.assignee_id)} />
+              <MetadataRow label="Người tạo" value={`User #${task.created_by}`} />
               <MetadataRow label="Project" value={project.name} />
               <MetadataRow label="Task ID" value={`#${task.id}`} />
-              <MetadataRow label="Created at" value={formatDate(task.created_at)} />
-              <MetadataRow label="Updated at" value={formatDate(task.updated_at)} />
-              <MetadataRow label="Your role" value={formatRoleLabel(currentProjectMember?.role_in_project || "viewer")} />
+              <MetadataRow label="Tạo lúc" value={formatDate(task.created_at)} />
+              <MetadataRow label="Cập nhật lúc" value={formatDate(task.updated_at)} />
+              <MetadataRow label="Vai trò của bạn" value={formatRoleLabel(currentProjectMember?.role_in_project || "viewer")} />
             </div>
           </SectionCard>
 
           <SectionCard
-            title="Cap nhat cong viec"
-            eyebrow="Workflow"
+            title="Cập nhật công việc"
+            eyebrow="Quy trình"
             description={
               canManageTask
-                ? "Ban co the update title, description, status va assignee."
+                ? "Bạn có thể cập nhật tiêu đề, mô tả, trạng thái và người phụ trách."
                 : canUpdateTask
-                  ? "Ban duoc assign task nay, co the update status."
-                  : "Ban chi co quyen xem task nay."
+                  ? "Bạn được gán task này, có thể cập nhật trạng thái."
+                  : "Bạn chỉ có quyền xem task này."
             }
           >
             <form className="space-y-4" onSubmit={handleUpdateTask}>
               <AlertBanner
                 message={taskMessage}
                 tone={
-                  taskMessage === "Task updated successfully." || taskMessage === "No changes detected."
+                  taskMessage === "Cập nhật công việc thành công." || taskMessage === "Không có thay đổi."
                     ? "success"
                     : "error"
                 }
               />
 
               <label className="block space-y-2">
-                <span className="text-sm font-semibold text-slate-700">Title</span>
+                <span className="text-sm font-semibold text-slate-700">Tiêu đề</span>
                 <input
                   className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
                   disabled={!canManageTask}
@@ -558,7 +558,7 @@ export default function TaskDetailPage({ currentUser, taskId }) {
               </label>
 
               <label className="block space-y-2">
-                <span className="text-sm font-semibold text-slate-700">Description</span>
+                <span className="text-sm font-semibold text-slate-700">Mô tả</span>
                 <textarea
                   className="min-h-24 w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
                   disabled={!canManageTask}
@@ -570,21 +570,21 @@ export default function TaskDetailPage({ currentUser, taskId }) {
               </label>
 
               <label className="block space-y-2">
-                <span className="text-sm font-semibold text-slate-700">Trang thai</span>
+                <span className="text-sm font-semibold text-slate-700">Trạng thái</span>
                 <select
                   className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
                   disabled={!canUpdateTask}
                   onChange={(event) => setTaskForm((prev) => ({ ...prev, status: event.target.value }))}
                   value={taskForm.status}
                 >
-                  <option value="todo">todo</option>
-                  <option value="in-progress">in-progress</option>
-                  <option value="done">done</option>
+                  <option value="todo">Cần làm</option>
+                  <option value="in-progress">Đang làm</option>
+                  <option value="done">Hoàn thành</option>
                 </select>
               </label>
 
               <label className="block space-y-2">
-                <span className="text-sm font-semibold text-slate-700">Nguoi phu trach</span>
+                <span className="text-sm font-semibold text-slate-700">Người phụ trách</span>
                 <select
                   className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
                   disabled={!canManageTask}
@@ -593,7 +593,7 @@ export default function TaskDetailPage({ currentUser, taskId }) {
                   }
                   value={taskForm.assignee_id}
                 >
-                  <option value="">Unassigned</option>
+                  <option value="">Chưa gán</option>
                   {members.map((member) => (
                     <option key={member.user_id} value={member.user_id}>
                       {member.name} (#{member.user_id})
@@ -608,7 +608,7 @@ export default function TaskDetailPage({ currentUser, taskId }) {
                   disabled={!canUpdateTask || taskSubmitting}
                   type="submit"
                 >
-                  {taskSubmitting ? "Saving..." : "Luu thay doi"}
+                  {taskSubmitting ? "Đang lưu..." : "Lưu thay đổi"}
                 </button>
                 <button
                   className="rounded-md border border-red-300 px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -616,7 +616,7 @@ export default function TaskDetailPage({ currentUser, taskId }) {
                   onClick={handleDeleteTask}
                   type="button"
                 >
-                  Xoa cong viec
+                  Xóa công việc
                 </button>
               </div>
             </form>
@@ -633,7 +633,7 @@ export default function TaskDetailPage({ currentUser, taskId }) {
                 <span className="text-xs font-semibold">task scope</span>
               </div>
               <div className="text-xs text-slate-500">
-                Frontend refetch task detail khi nhan event hop le.
+                Frontend tải lại chi tiết task khi nhận event hợp lệ.
               </div>
             </div>
           </SectionCard>

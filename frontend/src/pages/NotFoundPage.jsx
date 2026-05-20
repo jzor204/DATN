@@ -11,11 +11,11 @@ export default function NotFoundPage() {
             onClick={() => navigateTo("/projects")}
             type="button"
           >
-            Go to workspace
+            Về workspace
           </button>
         }
-        description="Duong dan nay khong ton tai trong frontend MVP hien tai."
-        title="Page not found"
+        description="Đường dẫn này không tồn tại trong frontend MVP hiện tại."
+        title="Không tìm thấy trang"
       />
     </div>
   );

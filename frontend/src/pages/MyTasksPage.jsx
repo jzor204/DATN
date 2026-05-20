@@ -8,7 +8,7 @@ import Pagination from "../components/Pagination";
 import SectionCard from "../components/SectionCard";
 import StatusBadge from "../components/StatusBadge";
 import { useRealtimeSubscription } from "../hooks/useRealtimeSubscription";
-import { formatDate } from "../utils/format";
+import { formatDate, formatTaskStatus } from "../utils/format";
 import { navigateTo } from "../utils/router";
 
 const STATUS_OPTIONS = ["all", "todo", "in-progress", "done"];
@@ -147,9 +147,9 @@ export default function MyTasksPage({ currentUser }) {
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-ink">Cong viec cua toi</h1>
+          <h1 className="text-2xl font-semibold text-ink">Công việc của tôi</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Cac cong viec dang duoc gan cho ban tren tat ca du an.
+            Các công việc đang được gán cho bạn trên tất cả dự án.
           </p>
         </div>
         <button
@@ -157,18 +157,18 @@ export default function MyTasksPage({ currentUser }) {
           onClick={() => setRefreshKey((prev) => prev + 1)}
           type="button"
         >
-          Refresh
+          Làm mới
         </button>
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
-        <MetricCard label="Tong cong viec" value={metrics.total} hint="Assigned to me" />
-        <MetricCard label="Todo" value={metrics.todo} />
-        <MetricCard label="In-progress" value={metrics["in-progress"]} />
-        <MetricCard label="Done" value={metrics.done} />
+        <MetricCard label="Tổng công việc" value={metrics.total} hint="Được gán cho tôi" />
+        <MetricCard label="Cần làm" value={metrics.todo} />
+        <MetricCard label="Đang làm" value={metrics["in-progress"]} />
+        <MetricCard label="Hoàn thành" value={metrics.done} />
       </div>
 
-      <SectionCard title="Danh sach cong viec" eyebrow="My work">
+      <SectionCard title="Danh sách công việc" eyebrow="Công việc của tôi">
         <AlertBanner message={pageError} />
 
         <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
@@ -178,7 +178,7 @@ export default function MyTasksPage({ currentUser }) {
               onChange={(event) => handleProjectFilterChange(event.target.value)}
               value={selectedProjectId}
             >
-              <option value="all">Tat ca du an</option>
+              <option value="all">Tất cả dự án</option>
               {projects.map((project) => (
                 <option key={project.id} value={project.id}>
                   {project.name}
@@ -198,7 +198,7 @@ export default function MyTasksPage({ currentUser }) {
                   onClick={() => handleStatusFilterChange(status)}
                   type="button"
                 >
-                  {status === "all" ? "Tat ca" : status}
+                  {status === "all" ? "Tất cả" : formatTaskStatus(status)}
                 </button>
               ))}
             </div>
@@ -206,16 +206,16 @@ export default function MyTasksPage({ currentUser }) {
 
           <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
             <span className="h-2 w-2 rounded-full bg-emerald-500" />
-            Listening project task events
+            Đang lắng nghe event task trong project
           </span>
         </div>
 
-        {loading ? <LoadingScreen label="Loading assigned tasks..." /> : null}
+        {loading ? <LoadingScreen label="Đang tải công việc được gán..." /> : null}
 
         {!loading && tasks.length === 0 ? (
           <EmptyState
-            description="Khong co task nao khop bo loc hien tai."
-            title="No assigned tasks"
+            description="Không có task nào khớp bộ lọc hiện tại."
+            title="Chưa có công việc được gán"
           />
         ) : null}
 
@@ -225,11 +225,11 @@ export default function MyTasksPage({ currentUser }) {
               <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
                 <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                   <tr>
-                    <th className="px-4 py-3">Cong viec</th>
-                    <th className="px-4 py-3">Du an</th>
-                    <th className="px-4 py-3">Trang thai</th>
-                    <th className="px-4 py-3">Cap nhat luc</th>
-                    <th className="px-4 py-3 text-right">Hanh dong</th>
+                    <th className="px-4 py-3">Công việc</th>
+                    <th className="px-4 py-3">Dự án</th>
+                    <th className="px-4 py-3">Trạng thái</th>
+                    <th className="px-4 py-3">Cập nhật lúc</th>
+                    <th className="px-4 py-3 text-right">Hành động</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
@@ -238,7 +238,7 @@ export default function MyTasksPage({ currentUser }) {
                       <td className="px-4 py-4">
                         <div className="font-semibold text-ink">{task.title}</div>
                         <div className="mt-1 max-w-xl truncate text-xs text-slate-500">
-                          {task.description || "No description"}
+                          {task.description || "Chưa có mô tả"}
                         </div>
                       </td>
                       <td className="px-4 py-4 text-slate-600">
@@ -256,7 +256,7 @@ export default function MyTasksPage({ currentUser }) {
                           onClick={() => navigateTo(`/tasks/${task.id}`)}
                           type="button"
                         >
-                          Open
+                          Mở
                         </button>
                       </td>
                     </tr>
@@ -270,13 +270,13 @@ export default function MyTasksPage({ currentUser }) {
         ) : null}
       </SectionCard>
 
-      <SectionCard title="Realtime scope" eyebrow="Events">
+      <SectionCard title="Realtime scope" eyebrow="Sự kiện">
         <div className="grid gap-3 md:grid-cols-3">
           {["task.updated", "task.deleted", "comment.created"].map((eventType) => (
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3" key={eventType}>
               <div className="text-sm font-semibold text-ink">{eventType}</div>
               <div className="mt-1 text-xs text-slate-500">
-                Refetch assigned tasks when received.
+                Tải lại công việc được gán khi nhận event.
               </div>
             </div>
           ))}

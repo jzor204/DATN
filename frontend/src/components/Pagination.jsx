@@ -9,7 +9,7 @@ export default function Pagination({ pagination, onPageChange }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3">
       <p className="text-sm text-slate-600">
-        Page <span className="font-semibold text-ink">{currentPage}</span> / {totalPages} - Total{" "}
+        Trang <span className="font-semibold text-ink">{currentPage}</span> / {totalPages} - Tổng{" "}
         <span className="font-semibold text-ink">{pagination.total}</span>
       </p>
 
@@ -20,7 +20,7 @@ export default function Pagination({ pagination, onPageChange }) {
           onClick={() => onPageChange(currentPage - 1)}
           type="button"
         >
-          Previous
+          Trước
         </button>
         <button
           className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-400"
@@ -28,7 +28,7 @@ export default function Pagination({ pagination, onPageChange }) {
           onClick={() => onPageChange(currentPage + 1)}
           type="button"
         >
-          Next
+          Tiếp
         </button>
       </div>
     </div>

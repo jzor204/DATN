@@ -34,17 +34,17 @@ export default function LoginPage({ notice, onAuthSuccess }) {
       <div className="w-full max-w-md">
         <div className="mb-6 text-center">
           <div className="text-xl font-semibold text-ink">Task Management</div>
-          <div className="mt-2 text-sm text-slate-500">Quan ly du an, cong viec va binh luan</div>
+          <div className="mt-2 text-sm text-slate-500">Quản lý dự án, công việc và bình luận</div>
         </div>
 
         <SectionCard
           action={
             <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
               <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              API online
+              API đang hoạt động
             </span>
           }
-          title="Dang nhap"
+          title="Đăng nhập"
         >
           <form className="space-y-4" onSubmit={handleSubmit}>
             <AlertBanner message={notice} tone="info" />
@@ -63,7 +63,7 @@ export default function LoginPage({ notice, onAuthSuccess }) {
             </label>
 
             <label className="block space-y-2">
-              <span className="text-sm font-semibold text-slate-700">Mat khau</span>
+              <span className="text-sm font-semibold text-slate-700">Mật khẩu</span>
               <input
                 className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
@@ -79,24 +79,24 @@ export default function LoginPage({ notice, onAuthSuccess }) {
               disabled={submitting}
               type="submit"
             >
-              {submitting ? "Dang dang nhap..." : "Dang nhap"}
+              {submitting ? "Đang đăng nhập..." : "Đăng nhập"}
             </button>
           </form>
 
           <div className="mt-5 flex items-center justify-between gap-3 text-sm text-slate-600">
-            <span>Chua co tai khoan?</span>
+            <span>Chưa có tài khoản?</span>
             <button
               className="font-semibold text-blue-600"
               onClick={() => navigateTo("/register")}
               type="button"
             >
-              Dang ky
+              Đăng ký
             </button>
           </div>
         </SectionCard>
 
         <div className="mt-4 rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500">
-          Seed admin: admin@example.com / 123456
+          Tài khoản admin mẫu: admin@example.com / 123456
         </div>
       </div>
     </div>

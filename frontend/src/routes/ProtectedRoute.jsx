@@ -10,7 +10,7 @@ export default function ProtectedRoute({ isReady, isAuthenticated, children }) {
   }, [isReady, isAuthenticated]);
 
   if (!isReady) {
-    return <LoadingScreen label="Checking session..." />;
+    return <LoadingScreen label="Đang kiểm tra phiên đăng nhập..." />;
   }
 
   if (!isAuthenticated) {

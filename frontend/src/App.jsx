@@ -122,7 +122,7 @@ export default function App() {
     return (
       <div className="px-4 py-8">
         <div className="mx-auto max-w-5xl">
-          <LoadingScreen label="Restoring session..." />
+          <LoadingScreen label="Đang khôi phục phiên đăng nhập..." />
         </div>
       </div>
     );
