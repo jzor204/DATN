@@ -15,7 +15,7 @@ import Pagination from "../components/Pagination";
 import SectionCard from "../components/SectionCard";
 import StatusBadge from "../components/StatusBadge";
 import { useRealtimeSubscription } from "../hooks/useRealtimeSubscription";
-import { formatDate, formatRoleLabel, toOptionalNumber } from "../utils/format";
+import { formatDate, formatRoleLabel, formatTaskStatus, toOptionalNumber } from "../utils/format";
 import { navigateTo } from "../utils/router";
 
 const initialProjectForm = {
@@ -88,6 +88,9 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
   const [taskForm, setTaskForm] = useState(initialTaskForm);
   const [taskMessage, setTaskMessage] = useState("");
   const [taskSubmitting, setTaskSubmitting] = useState(false);
+  const [taskSearch, setTaskSearch] = useState("");
+  const [taskStatusFilter, setTaskStatusFilter] = useState("all");
+  const [taskAssigneeFilter, setTaskAssigneeFilter] = useState("all");
 
   const currentProjectMember = useMemo(
     () => members.find((member) => member.user_id === currentUser.id),
@@ -102,6 +105,35 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
   const canDeleteProject =
     currentUser.role === "admin" || currentProjectMember?.role_in_project === "owner";
 
+  const filteredTasks = useMemo(() => {
+    const keyword = taskSearch.trim().toLowerCase();
+
+    return tasks.filter((task) => {
+      const normalizedStatus = normalizeStatus(task.status);
+      const assigneeName = getMemberName(members, task.assignee_id);
+      const searchableText = [
+        task.title,
+        task.description,
+        task.status,
+        formatTaskStatus(task.status),
+        assigneeName,
+        task.assignee_id ? `#${task.assignee_id}` : "chưa gán"
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      const matchesSearch = !keyword || searchableText.includes(keyword);
+      const matchesStatus = taskStatusFilter === "all" || normalizedStatus === taskStatusFilter;
+      const matchesAssignee =
+        taskAssigneeFilter === "all" ||
+        (taskAssigneeFilter === "unassigned" && !task.assignee_id) ||
+        Number(task.assignee_id) === Number(taskAssigneeFilter);
+
+      return matchesSearch && matchesStatus && matchesAssignee;
+    });
+  }, [members, taskAssigneeFilter, taskSearch, taskStatusFilter, tasks]);
+
   const groupedTasks = useMemo(() => {
     const groups = {
       todo: [],
@@ -109,7 +141,7 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
       done: []
     };
 
-    tasks.forEach((task) => {
+    filteredTasks.forEach((task) => {
       const status = normalizeStatus(task.status);
       if (!groups[status]) {
         groups.todo.push(task);
@@ -119,7 +151,16 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
     });
 
     return groups;
-  }, [tasks]);
+  }, [filteredTasks]);
+
+  const hasTaskFilters =
+    taskSearch.trim() !== "" || taskStatusFilter !== "all" || taskAssigneeFilter !== "all";
+
+  function resetTaskFilters() {
+    setTaskSearch("");
+    setTaskStatusFilter("all");
+    setTaskAssigneeFilter("all");
+  }
 
   useEffect(() => {
     let active = true;
@@ -405,6 +446,57 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
 
       <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
         <div className="space-y-4">
+          <SectionCard title="Lọc công việc" eyebrow="Task filter">
+            <div className="grid gap-3 lg:grid-cols-[1fr_180px_220px_auto]">
+              <input
+                className="rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                onChange={(event) => setTaskSearch(event.target.value)}
+                placeholder="Tìm theo tiêu đề, mô tả, người phụ trách"
+                value={taskSearch}
+              />
+
+              <select
+                className="rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                onChange={(event) => setTaskStatusFilter(event.target.value)}
+                value={taskStatusFilter}
+              >
+                <option value="all">Tất cả trạng thái</option>
+                <option value="todo">Cần làm</option>
+                <option value="in_progress">Đang làm</option>
+                <option value="done">Hoàn thành</option>
+              </select>
+
+              <select
+                className="rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                onChange={(event) => setTaskAssigneeFilter(event.target.value)}
+                value={taskAssigneeFilter}
+              >
+                <option value="all">Tất cả người phụ trách</option>
+                <option value="unassigned">Chưa gán</option>
+                {members.map((member) => (
+                  <option key={member.user_id} value={member.user_id}>
+                    {member.name}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                className="rounded-md border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={!hasTaskFilters}
+                onClick={resetTaskFilters}
+                type="button"
+              >
+                Xóa lọc
+              </button>
+            </div>
+
+            <div className="mt-3 text-xs text-slate-500">
+              Đang hiển thị{" "}
+              <span className="font-semibold text-slate-700">{filteredTasks.length}</span> /{" "}
+              <span className="font-semibold text-slate-700">{tasks.length}</span> công việc ở trang hiện tại.
+            </div>
+          </SectionCard>
+
           <div className="grid gap-4 lg:grid-cols-3">
             {boardColumns.map((column) => (
               <section className="rounded-lg border border-slate-200 bg-slate-100/70 p-3" key={column.key}>
