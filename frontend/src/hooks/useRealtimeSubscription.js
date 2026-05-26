@@ -12,8 +12,10 @@ function buildRealtimeUrl({ scope, projectId, taskId }) {
   }
 
   const normalizedBaseUrl = API_BASE_URL.replace(/\/+$/, "");
-  const websocketBaseUrl = normalizedBaseUrl.replace(/^http/i, "ws");
-  const url = new URL(`${websocketBaseUrl}/ws`);
+  const url = new URL(normalizedBaseUrl, window.location.origin);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  url.pathname = `${url.pathname.replace(/\/+$/, "")}/ws`;
+  url.search = "";
 
   url.searchParams.set("token", token);
   url.searchParams.set("scope", scope);

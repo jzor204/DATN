@@ -1,0 +1,71 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: task_management_mysql_prod
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: task_management_redis_prod
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: task_management_api_prod
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      APP_ENV: production
+      APP_PORT: 8080
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    expose:
+      - "8080"
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: task_management_nginx_prod
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./frontend/dist:/usr/share/nginx/html:ro
+
+volumes:
+  mysql_data:
+  redis_data:

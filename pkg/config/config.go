@@ -29,6 +29,9 @@ type Config struct {
 
 	JWTSecret                 string
 	JWTAccessTokenExpireHours int
+
+	SwaggerHost    string
+	SwaggerSchemes string
 }
 
 func Load() *Config {
@@ -52,6 +55,9 @@ func Load() *Config {
 
 		JWTSecret:                 getEnv("JWT_SECRET", "super-secret-key"),
 		JWTAccessTokenExpireHours: getEnvAsInt("JWT_ACCESS_TOKEN_EXPIRE_HOURS", 24),
+
+		SwaggerHost:    getEnv("SWAGGER_HOST", ""),
+		SwaggerSchemes: getEnv("SWAGGER_SCHEMES", "http"),
 	}
 }
 

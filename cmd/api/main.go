@@ -11,6 +11,7 @@ package main
 
 import (
 	"log"
+	"strings"
 
 	docs "task-management/docs"
 	deliveryhttp "task-management/internal/delivery/http"
@@ -31,9 +32,9 @@ func main() {
 	docs.SwaggerInfo.Title = "Task Management API"
 	docs.SwaggerInfo.Description = "RESTful API cho há»‡ thá»‘ng Task Management"
 	docs.SwaggerInfo.Version = "1.0"
-	docs.SwaggerInfo.Host = "localhost:" + cfg.AppPort
+	docs.SwaggerInfo.Host = swaggerHost(cfg)
 	docs.SwaggerInfo.BasePath = "/api/v1"
-	docs.SwaggerInfo.Schemes = []string{"http"}
+	docs.SwaggerInfo.Schemes = swaggerSchemes(cfg)
 
 	db, err := database.NewMySQL(cfg)
 	if err != nil {
@@ -106,4 +107,30 @@ func main() {
 	if err := app.Listen(":" + cfg.AppPort); err != nil {
 		log.Fatalf("failed to start server: %v", err)
 	}
+}
+
+func swaggerHost(cfg *config.Config) string {
+	if strings.TrimSpace(cfg.SwaggerHost) != "" {
+		return strings.TrimSpace(cfg.SwaggerHost)
+	}
+
+	return "localhost:" + cfg.AppPort
+}
+
+func swaggerSchemes(cfg *config.Config) []string {
+	rawSchemes := strings.Split(cfg.SwaggerSchemes, ",")
+	schemes := make([]string, 0, len(rawSchemes))
+
+	for _, rawScheme := range rawSchemes {
+		scheme := strings.TrimSpace(rawScheme)
+		if scheme != "" {
+			schemes = append(schemes, scheme)
+		}
+	}
+
+	if len(schemes) == 0 {
+		return []string{"http"}
+	}
+
+	return schemes
 }
