@@ -7,6 +7,57 @@ Huong dan nay dung cho cach deploy don gian theo so do:
 - Backend Go/Fiber, MySQL va Redis chay bang Docker Compose.
 - Co the chay bang IP VPS, khong bat buoc mua domain.
 
+## 0. Deploy nhanh voi repo GitHub cua ban
+
+Repo cua project:
+
+```text
+https://github.com/jzor204/DATN.git
+```
+
+Ban can co:
+
+- 1 VPS Ubuntu co IP public.
+- Tai khoan SSH vao VPS, vi du `root@<ip-vps>`.
+- Docker va Docker Compose tren VPS.
+
+Neu ban chua co VPS thi chua deploy public duoc. Khi do ban chi co the chay local bang Docker Desktop tren may Windows.
+
+Quy trinh dung la:
+
+1. Tren may Windows/local: push code moi nhat len GitHub.
+2. SSH vao VPS Ubuntu.
+3. Clone repo tu GitHub ve VPS.
+4. Tao `.env.production`.
+5. Build frontend.
+6. Chay Docker Compose production.
+7. Chay migration.
+8. Mo `http://<ip-vps>/` de demo.
+
+Neu local co thay doi chua push, chay tren PowerShell/local:
+
+```bash
+git status
+git add .
+git commit -m "Add production deployment setup"
+git push origin main
+```
+
+Sau do SSH vao VPS:
+
+```bash
+ssh root@<ip-vps>
+```
+
+Tren VPS, clone repo:
+
+```bash
+git clone https://github.com/jzor204/DATN.git task-management
+cd task-management
+```
+
+Tu day tro di, cac lenh Docker/Nginx/MySQL deu chay trong terminal VPS, khong chay trong PowerShell Windows.
+
 ## 1. Chuan bi VPS
 
 Can mot VPS Ubuntu co Docker va Docker Compose plugin.
@@ -62,7 +113,7 @@ sudo ufw allow 443/tcp
 Cach pho bien nhat la clone repository:
 
 ```bash
-git clone <your-repo-url> task-management
+git clone https://github.com/jzor204/DATN.git task-management
 cd task-management
 ```
 
