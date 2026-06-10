@@ -2,13 +2,21 @@ import { useEffect, useMemo, useState } from "react";
 import { listProjects } from "../api/projectApi";
 import { listMyTasks } from "../api/taskApi";
 import AlertBanner from "../components/AlertBanner";
+import DeadlineBadge from "../components/DeadlineBadge";
 import EmptyState from "../components/EmptyState";
 import LoadingScreen from "../components/LoadingScreen";
 import Pagination from "../components/Pagination";
+import ProgressIndicator from "../components/ProgressIndicator";
 import SectionCard from "../components/SectionCard";
 import StatusBadge from "../components/StatusBadge";
 import { useRealtimeSubscription } from "../hooks/useRealtimeSubscription";
-import { formatDate, formatTaskStatus } from "../utils/format";
+import {
+  formatDate,
+  formatDeadline,
+  formatTaskStatus,
+  getDeadlineState,
+  normalizeTaskProgress
+} from "../utils/format";
 import { navigateTo } from "../utils/router";
 
 const STATUS_OPTIONS = ["all", "todo", "in-progress", "done"];
@@ -126,13 +134,25 @@ export default function MyTasksPage({ currentUser }) {
   const metrics = useMemo(() => {
     return metricsSource.reduce(
       (acc, task) => {
+        const deadlineState = getDeadlineState(task.deadline, task.status);
+        const progress = normalizeTaskProgress(task.progress);
+
         acc.total += 1;
         acc[normalizeStatus(task.status)] += 1;
+        acc.progressTotal += progress;
+        if (deadlineState === "overdue") {
+          acc.overdue += 1;
+        }
+        if (deadlineState === "today" || deadlineState === "soon") {
+          acc.upcoming += 1;
+        }
         return acc;
       },
-      { total: 0, todo: 0, "in-progress": 0, done: 0 }
+      { total: 0, todo: 0, "in-progress": 0, done: 0, overdue: 0, upcoming: 0, progressTotal: 0 }
     );
   }, [metricsSource]);
+
+  const averageProgress = metrics.total > 0 ? Math.round(metrics.progressTotal / metrics.total) : 0;
 
   return (
     <div className="space-y-6">
@@ -161,10 +181,13 @@ export default function MyTasksPage({ currentUser }) {
         </button>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-7">
         <MetricCard label="Tổng công việc" value={metrics.total} hint="Được gán cho tôi" />
         <MetricCard label="Cần làm" value={metrics.todo} />
         <MetricCard label="Đang làm" value={metrics["in-progress"]} />
+        <MetricCard label="Tiến độ TB" value={`${averageProgress}%`} />
+        <MetricCard label="Quá hạn" value={metrics.overdue} />
+        <MetricCard label="Sắp đến hạn" value={metrics.upcoming} hint="Hôm nay hoặc 72h tới" />
         <MetricCard label="Hoàn thành" value={metrics.done} />
       </div>
 
@@ -228,6 +251,8 @@ export default function MyTasksPage({ currentUser }) {
                     <th className="px-4 py-3">Công việc</th>
                     <th className="px-4 py-3">Dự án</th>
                     <th className="px-4 py-3">Trạng thái</th>
+                    <th className="px-4 py-3">Tiến độ</th>
+                    <th className="px-4 py-3">Deadline</th>
                     <th className="px-4 py-3">Cập nhật lúc</th>
                     <th className="px-4 py-3 text-right">Hành động</th>
                   </tr>
@@ -246,6 +271,15 @@ export default function MyTasksPage({ currentUser }) {
                       </td>
                       <td className="px-4 py-4">
                         <StatusBadge status={task.status} />
+                      </td>
+                      <td className="px-4 py-4">
+                        <ProgressIndicator compact progress={task.progress} />
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex flex-col gap-1">
+                          <DeadlineBadge deadline={task.deadline} status={task.status} />
+                          <span className="text-xs text-slate-500">{formatDeadline(task.deadline)}</span>
+                        </div>
                       </td>
                       <td className="px-4 py-4 text-slate-600">
                         {formatDate(task.updated_at || task.created_at)}

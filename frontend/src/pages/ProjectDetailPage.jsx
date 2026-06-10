@@ -7,15 +7,28 @@ import {
   removeProjectMember,
   updateProject
 } from "../api/projectApi";
+import { listChecklistsByTask } from "../api/checklistApi";
 import { createTask, listTasksByProject } from "../api/taskApi";
 import AlertBanner from "../components/AlertBanner";
+import DeadlineBadge from "../components/DeadlineBadge";
 import EmptyState from "../components/EmptyState";
 import LoadingScreen from "../components/LoadingScreen";
 import Pagination from "../components/Pagination";
 import SectionCard from "../components/SectionCard";
 import StatusBadge from "../components/StatusBadge";
+import TaskModal from "../components/TaskModal";
 import { useRealtimeSubscription } from "../hooks/useRealtimeSubscription";
-import { formatDate, formatRoleLabel, formatTaskStatus, toOptionalNumber } from "../utils/format";
+import {
+  formatDate,
+  formatDeadline,
+  formatDeadlineState,
+  formatRoleLabel,
+  formatTaskStatus,
+  getDeadlineState,
+  normalizeTaskProgress,
+  toDeadlinePayload,
+  toOptionalNumber
+} from "../utils/format";
 import { navigateTo } from "../utils/router";
 
 const initialProjectForm = {
@@ -31,7 +44,8 @@ const initialMemberForm = {
 const initialTaskForm = {
   title: "",
   description: "",
-  assignee_id: ""
+  assignee_id: "",
+  deadline: ""
 };
 
 const initialTaskPagination = {
@@ -51,6 +65,172 @@ function normalizeStatus(status) {
 function getMemberName(members, userId) {
   const member = members.find((item) => Number(item.user_id) === Number(userId));
   return member?.name || (userId ? `User #${userId}` : "Chưa gán");
+}
+
+function getMemberById(members, userId) {
+  return members.find((item) => Number(item.user_id) === Number(userId));
+}
+
+function getTaskAssigneeIds(task) {
+  if (!task) {
+    return [];
+  }
+
+  const source = Array.isArray(task.assignee_ids) ? task.assignee_ids : [];
+  const ids = source.length > 0 ? source : task.assignee_id ? [task.assignee_id] : [];
+
+  return Array.from(new Set(ids.map((id) => Number(id)).filter(Boolean)));
+}
+
+const avatarTones = [
+  "bg-sky-500 text-white",
+  "bg-emerald-500 text-white",
+  "bg-orange-500 text-white",
+  "bg-violet-500 text-white",
+  "bg-rose-500 text-white",
+  "bg-cyan-600 text-white",
+  "bg-amber-500 text-slate-950",
+  "bg-fuchsia-500 text-white"
+];
+
+function getInitials(name = "") {
+  const initials = name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("");
+
+  return initials || "?";
+}
+
+function getAvatarTone(userId) {
+  const index = Math.abs(Number(userId) || 0) % avatarTones.length;
+  return avatarTones[index];
+}
+
+function Avatar({ member, userId, size = "sm" }) {
+  const displayName = member?.name || (userId ? `User #${userId}` : "?");
+  const sizeClass = size === "lg" ? "h-16 w-16 text-2xl" : "h-8 w-8 text-xs";
+
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center justify-center rounded-full font-bold ring-2 ring-white ${sizeClass} ${getAvatarTone(member?.user_id || userId)}`}
+      title={displayName}
+    >
+      {getInitials(displayName)}
+    </span>
+  );
+}
+
+function AssigneePopover({ member, userId, onClose, onViewProfile }) {
+  const displayName = member?.name || (userId ? `User #${userId}` : "Chưa rõ");
+  const email = member?.email || "Chưa có email";
+
+  return (
+    <div
+      className="absolute right-0 top-10 z-30 w-72 overflow-hidden rounded-lg border border-slate-200 bg-white text-left shadow-xl"
+      onClick={(event) => event.stopPropagation()}
+    >
+      <div className="relative bg-blue-500 px-4 py-4 text-white">
+        <button
+          className="absolute right-2 top-2 rounded-md px-2 py-1 text-sm font-semibold text-white/80 transition hover:bg-white/10 hover:text-white"
+          onClick={onClose}
+          type="button"
+        >
+          X
+        </button>
+        <div className="flex items-center gap-3">
+          <Avatar member={member} size="lg" userId={userId} />
+          <div className="min-w-0">
+            <div className="truncate text-base font-semibold">{displayName}</div>
+            <div className="truncate text-xs text-white/80">{email}</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-3 px-4 py-4 text-sm text-slate-700">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Vai trò</div>
+          <div className="mt-1 font-semibold text-ink">
+            {formatRoleLabel(member?.role_in_project || "member")}
+          </div>
+        </div>
+        <button
+          className="w-full rounded-md border border-slate-200 px-3 py-2 text-left text-sm font-semibold text-slate-700 transition hover:border-blue-300 hover:text-blue-700"
+          onClick={onViewProfile}
+          type="button"
+        >
+          Xem hồ sơ
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TaskAssignees({ members, openPopover, task, onTogglePopover, onViewProfile }) {
+  const assigneeIds = getTaskAssigneeIds(task);
+
+  if (assigneeIds.length === 0) {
+    return (
+      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+        Chưa gán
+      </span>
+    );
+  }
+
+  return (
+    <div className="relative ml-auto flex items-center justify-end">
+      <div className="flex -space-x-2">
+        {assigneeIds.map((userId) => {
+          const member = getMemberById(members, userId);
+          const isOpen =
+            openPopover?.taskId === task.id && Number(openPopover?.userId) === Number(userId);
+
+          return (
+            <div className="relative" key={userId}>
+              <button
+                className="rounded-full transition hover:z-10 hover:-translate-y-0.5"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onTogglePopover(task.id, userId);
+                }}
+                type="button"
+              >
+                <Avatar member={member} userId={userId} />
+              </button>
+              {isOpen ? (
+                <AssigneePopover
+                  member={member}
+                  onClose={() => onTogglePopover(null, null)}
+                  onViewProfile={() => onViewProfile(member, userId)}
+                  userId={userId}
+                />
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function normalizeChecklistPayload(payload) {
+  const list = Array.isArray(payload) ? payload : payload?.data || [];
+
+  return list.map((checklist) => ({
+    ...checklist,
+    items: Array.isArray(checklist.items) ? checklist.items : []
+  }));
+}
+
+function getChecklistCount(checklists) {
+  const items = checklists.flatMap((checklist) => checklist.items || []);
+
+  return {
+    done: items.filter((item) => item.is_done).length,
+    total: items.length
+  };
 }
 
 function RoleChip({ role }) {
@@ -91,6 +271,10 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
   const [taskSearch, setTaskSearch] = useState("");
   const [taskStatusFilter, setTaskStatusFilter] = useState("all");
   const [taskAssigneeFilter, setTaskAssigneeFilter] = useState("all");
+  const [taskDeadlineFilter, setTaskDeadlineFilter] = useState("all");
+  const [selectedTaskId, setSelectedTaskId] = useState(null);
+  const [taskChecklistCounts, setTaskChecklistCounts] = useState({});
+  const [openAssigneePopover, setOpenAssigneePopover] = useState(null);
 
   const currentProjectMember = useMemo(
     () => members.find((member) => member.user_id === currentUser.id),
@@ -110,14 +294,21 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
 
     return tasks.filter((task) => {
       const normalizedStatus = normalizeStatus(task.status);
-      const assigneeName = getMemberName(members, task.assignee_id);
+      const assigneeIds = getTaskAssigneeIds(task);
+      const assigneeText = assigneeIds
+        .map((userId) => `${getMemberName(members, userId)} #${userId}`)
+        .join(" ");
+      const deadlineState = getDeadlineState(task.deadline, normalizedStatus);
       const searchableText = [
         task.title,
         task.description,
         task.status,
         formatTaskStatus(task.status),
-        assigneeName,
-        task.assignee_id ? `#${task.assignee_id}` : "chưa gán"
+        `${normalizeTaskProgress(task.progress)}%`,
+        formatDeadline(task.deadline),
+        formatDeadlineState(deadlineState),
+        assigneeText,
+        assigneeIds.length > 0 ? assigneeIds.map((userId) => `#${userId}`).join(" ") : "chưa gán"
       ]
         .filter(Boolean)
         .join(" ")
@@ -127,12 +318,16 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
       const matchesStatus = taskStatusFilter === "all" || normalizedStatus === taskStatusFilter;
       const matchesAssignee =
         taskAssigneeFilter === "all" ||
-        (taskAssigneeFilter === "unassigned" && !task.assignee_id) ||
-        Number(task.assignee_id) === Number(taskAssigneeFilter);
+        (taskAssigneeFilter === "unassigned" && assigneeIds.length === 0) ||
+        assigneeIds.includes(Number(taskAssigneeFilter));
+      const matchesDeadline =
+        taskDeadlineFilter === "all" ||
+        deadlineState === taskDeadlineFilter ||
+        (taskDeadlineFilter === "active" && deadlineState !== "none" && deadlineState !== "completed");
 
-      return matchesSearch && matchesStatus && matchesAssignee;
+      return matchesSearch && matchesStatus && matchesAssignee && matchesDeadline;
     });
-  }, [members, taskAssigneeFilter, taskSearch, taskStatusFilter, tasks]);
+  }, [members, taskAssigneeFilter, taskDeadlineFilter, taskSearch, taskStatusFilter, tasks]);
 
   const groupedTasks = useMemo(() => {
     const groups = {
@@ -154,12 +349,58 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
   }, [filteredTasks]);
 
   const hasTaskFilters =
-    taskSearch.trim() !== "" || taskStatusFilter !== "all" || taskAssigneeFilter !== "all";
+    taskSearch.trim() !== "" ||
+    taskStatusFilter !== "all" ||
+    taskAssigneeFilter !== "all" ||
+    taskDeadlineFilter !== "all";
 
   function resetTaskFilters() {
     setTaskSearch("");
     setTaskStatusFilter("all");
     setTaskAssigneeFilter("all");
+    setTaskDeadlineFilter("all");
+  }
+
+  function toggleAssigneePopover(taskId, userId) {
+    if (!taskId || !userId) {
+      setOpenAssigneePopover(null);
+      return;
+    }
+
+    setOpenAssigneePopover((current) =>
+      current?.taskId === taskId && Number(current?.userId) === Number(userId)
+        ? null
+        : { taskId, userId }
+    );
+  }
+
+  function handleViewAssigneeProfile(member, userId) {
+    const keyword = member?.email || member?.name || userId;
+    navigateTo(`/members?search=${encodeURIComponent(keyword)}`);
+  }
+
+  useEffect(() => {
+    function handleWindowClick() {
+      setOpenAssigneePopover(null);
+    }
+
+    window.addEventListener("click", handleWindowClick);
+    return () => window.removeEventListener("click", handleWindowClick);
+  }, []);
+
+  async function loadChecklistCountsForTasks(taskItems) {
+    const entries = await Promise.all(
+      taskItems.map(async (task) => {
+        try {
+          const payload = await listChecklistsByTask(task.id);
+          return [task.id, getChecklistCount(normalizeChecklistPayload(payload))];
+        } catch (err) {
+          return [task.id, { done: 0, total: 0 }];
+        }
+      })
+    );
+
+    return Object.fromEntries(entries);
   }
 
   useEffect(() => {
@@ -175,6 +416,8 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
           listProjectMembers(projectId, 1, 100),
           listTasksByProject(projectId, taskPage, 6)
         ]);
+        const tasksData = taskPayload.data || [];
+        const checklistCounts = await loadChecklistCountsForTasks(tasksData);
 
         if (!active) {
           return;
@@ -186,7 +429,8 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
           description: projectPayload.description || ""
         });
         setMembers(memberPayload.data || []);
-        setTasks(taskPayload.data || []);
+        setTasks(tasksData);
+        setTaskChecklistCounts(checklistCounts);
         setTaskPagination(taskPayload.pagination || initialTaskPagination);
       } catch (err) {
         if (active) {
@@ -222,7 +466,11 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
 
   async function reloadTasks(pageToLoad = taskPage) {
     const payload = await listTasksByProject(projectId, pageToLoad, 6);
-    setTasks(payload.data || []);
+    const tasksData = payload.data || [];
+    const checklistCounts = await loadChecklistCountsForTasks(tasksData);
+
+    setTasks(tasksData);
+    setTaskChecklistCounts(checklistCounts);
     setTaskPagination(payload.pagination || initialTaskPagination);
   }
 
@@ -349,6 +597,10 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
         payload.assignee_id = assigneeId;
       }
 
+      if (taskForm.deadline) {
+        payload.deadline = toDeadlinePayload(taskForm.deadline);
+      }
+
       await createTask(projectId, payload);
       setTaskForm(initialTaskForm);
       setTaskMessage("Tạo công việc thành công.");
@@ -395,16 +647,79 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white px-5 py-5 shadow-panel xl:flex-row xl:items-start xl:justify-between">
-        <div>
+      <div className="flex flex-col gap-5 rounded-lg border border-slate-200 bg-white px-5 py-5 shadow-panel xl:flex-row xl:items-start xl:justify-between">
+        <div className="min-w-0 flex-1">
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             Dự án / {project.name}
           </div>
+          {canManageProject ? (
+            <form className="mt-3 space-y-3" onSubmit={handleUpdateProject}>
+              <div className="flex flex-wrap items-center gap-2">
+                <RoleChip role={currentProjectMember?.role_in_project || "viewer"} />
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                  Project #{project.id}
+                </span>
+              </div>
+
+              <div className="grid gap-3 xl:grid-cols-[minmax(220px,360px)_minmax(260px,1fr)_auto] xl:items-end">
+                <label className="block space-y-2">
+                  <span className="text-sm font-semibold text-slate-700">Tên project</span>
+                  <input
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
+                    disabled={!canManageProject}
+                    onChange={(event) => setProjectForm((prev) => ({ ...prev, name: event.target.value }))}
+                    required
+                    value={projectForm.name}
+                  />
+                </label>
+
+                <label className="block space-y-2">
+                  <span className="text-sm font-semibold text-slate-700">Mô tả</span>
+                  <input
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
+                    disabled={!canManageProject}
+                    onChange={(event) =>
+                      setProjectForm((prev) => ({ ...prev, description: event.target.value }))
+                    }
+                    value={projectForm.description}
+                  />
+                </label>
+
+                <div className="flex gap-2">
+                  <button
+                    className="rounded-md bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+                    disabled={!canManageProject || projectSubmitting}
+                    type="submit"
+                  >
+                    {projectSubmitting ? "Đang lưu..." : "Lưu"}
+                  </button>
+                  <button
+                    className="rounded-md border border-red-300 px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!canDeleteProject}
+                    onClick={handleDeleteProject}
+                    type="button"
+                  >
+                    Xóa
+                  </button>
+                </div>
+              </div>
+
+              <AlertBanner
+                message={projectMessage}
+                tone={projectMessage === "Cập nhật project thành công." ? "success" : "error"}
+              />
+            </form>
+          ) : null}
+
+          {!canManageProject ? (
+            <>
           <div className="mt-2 flex flex-wrap items-center gap-3">
             <h1 className="text-2xl font-semibold text-ink">{project.name}</h1>
             <RoleChip role={currentProjectMember?.role_in_project || "viewer"} />
           </div>
           <p className="mt-2 max-w-3xl text-sm text-slate-600">{project.description || "Chưa có mô tả"}</p>
+            </>
+          ) : null}
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -447,7 +762,7 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
       <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
         <div className="space-y-4">
           <SectionCard title="Lọc công việc" eyebrow="Task filter">
-            <div className="grid gap-3 lg:grid-cols-[1fr_180px_220px_auto]">
+            <div className="grid gap-3 xl:grid-cols-[1fr_170px_210px_180px_auto]">
               <input
                 className="rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 onChange={(event) => setTaskSearch(event.target.value)}
@@ -478,6 +793,19 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
                     {member.name}
                   </option>
                 ))}
+              </select>
+
+              <select
+                className="rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                onChange={(event) => setTaskDeadlineFilter(event.target.value)}
+                value={taskDeadlineFilter}
+              >
+                <option value="all">Tất cả deadline</option>
+                <option value="active">Có deadline</option>
+                <option value="overdue">Quá hạn</option>
+                <option value="today">Đến hạn hôm nay</option>
+                <option value="soon">Sắp đến hạn</option>
+                <option value="none">Chưa có deadline</option>
               </select>
 
               <button
@@ -519,12 +847,12 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
 
                   {groupedTasks[column.key].map((task) => (
                     <article
-                      className="rounded-lg border border-slate-200 bg-white p-4 shadow-panel transition hover:border-blue-200"
+                      className="task-card rounded-lg border border-slate-200 bg-white p-4 shadow-panel transition"
                       key={task.id}
                     >
                       <button
                         className="block w-full text-left"
-                        onClick={() => navigateTo(`/tasks/${task.id}`)}
+                        onClick={() => setSelectedTaskId(task.id)}
                         type="button"
                       >
                         <div className="font-semibold text-ink">{task.title}</div>
@@ -534,11 +862,24 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
                       </button>
                       <div className="mt-3 flex flex-wrap items-center gap-2">
                         <StatusBadge status={task.status} />
-                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
-                          {getMemberName(members, task.assignee_id)}
-                        </span>
+                        <DeadlineBadge deadline={task.deadline} status={normalizeStatus(task.status)} />
+                        <TaskAssignees
+                          members={members}
+                          onTogglePopover={toggleAssigneePopover}
+                          onViewProfile={handleViewAssigneeProfile}
+                          openPopover={openAssigneePopover}
+                          task={task}
+                        />
                       </div>
-                      <div className="mt-3 text-xs text-slate-500">Cập nhật {formatDate(task.updated_at || task.created_at)}</div>
+                      <div className="mt-3 space-y-1 text-xs text-slate-500">
+                        <div className="flex items-center justify-between gap-2">
+                          <span>Deadline {formatDeadline(task.deadline)}</span>
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600">
+                            {taskChecklistCounts[task.id]?.done || 0}/{taskChecklistCounts[task.id]?.total || 0}
+                          </span>
+                        </div>
+                        <div>Cập nhật {formatDate(task.updated_at || task.created_at)}</div>
+                      </div>
                     </article>
                   ))}
                 </div>
@@ -597,6 +938,17 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
                     </option>
                   ))}
                 </select>
+              </label>
+
+              <label className="block space-y-2">
+                <span className="text-sm font-semibold text-slate-700">Deadline</span>
+                <input
+                  className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
+                  disabled={!canManageProject}
+                  onChange={(event) => setTaskForm((prev) => ({ ...prev, deadline: event.target.value }))}
+                  type="datetime-local"
+                  value={taskForm.deadline}
+                />
               </label>
 
               <button
@@ -680,55 +1032,16 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
         </div>
       </div>
 
-      <SectionCard title="Cài đặt project" eyebrow="Quản lý">
-        <form className="grid gap-4 lg:grid-cols-[1fr_1.4fr_auto]" onSubmit={handleUpdateProject}>
-          <AlertBanner
-            message={projectMessage}
-            tone={projectMessage === "Cập nhật project thành công." ? "success" : "error"}
-          />
-
-          <label className="block space-y-2">
-            <span className="text-sm font-semibold text-slate-700">Tên project</span>
-            <input
-              className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
-              disabled={!canManageProject}
-              onChange={(event) => setProjectForm((prev) => ({ ...prev, name: event.target.value }))}
-              required
-              value={projectForm.name}
-            />
-          </label>
-
-          <label className="block space-y-2">
-            <span className="text-sm font-semibold text-slate-700">Mô tả</span>
-            <input
-              className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
-              disabled={!canManageProject}
-              onChange={(event) =>
-                setProjectForm((prev) => ({ ...prev, description: event.target.value }))
-              }
-              value={projectForm.description}
-            />
-          </label>
-
-          <div className="flex items-end gap-2">
-            <button
-              className="rounded-md bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-              disabled={!canManageProject || projectSubmitting}
-              type="submit"
-            >
-              {projectSubmitting ? "Đang lưu..." : "Lưu"}
-            </button>
-            <button
-              className="rounded-md border border-red-300 px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!canDeleteProject}
-              onClick={handleDeleteProject}
-              type="button"
-            >
-              Xóa
-            </button>
-          </div>
-        </form>
-      </SectionCard>
+      {selectedTaskId ? (
+        <TaskModal
+          currentUser={currentUser}
+          members={members}
+          onChanged={() => reloadTasks(taskPage)}
+          onClose={() => setSelectedTaskId(null)}
+          project={project}
+          taskId={selectedTaskId}
+        />
+      ) : null}
     </div>
   );
 }

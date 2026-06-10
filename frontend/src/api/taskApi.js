@@ -42,6 +42,11 @@ export async function getTask(taskId) {
   return response.data;
 }
 
+export async function getTaskAssignees(taskId) {
+  const response = await axiosClient.get(`/task-assignees/tasks/${taskId}`);
+  return response.data;
+}
+
 export async function updateTask(taskId, payload) {
   const response = await axiosClient.put(`/tasks/${taskId}`, payload);
   return response.data;

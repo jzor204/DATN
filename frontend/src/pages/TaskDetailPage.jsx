@@ -3,16 +3,22 @@ import { createComment, deleteComment, listCommentsByTask, updateComment } from 
 import { getProject, listProjectMembers } from "../api/projectApi";
 import { deleteTask, getTask, updateTask } from "../api/taskApi";
 import AlertBanner from "../components/AlertBanner";
+import DeadlineBadge from "../components/DeadlineBadge";
 import EmptyState from "../components/EmptyState";
 import LoadingScreen from "../components/LoadingScreen";
 import Pagination from "../components/Pagination";
+import ProgressIndicator from "../components/ProgressIndicator";
 import SectionCard from "../components/SectionCard";
 import StatusBadge from "../components/StatusBadge";
 import { useRealtimeSubscription } from "../hooks/useRealtimeSubscription";
 import {
   formatDate,
+  formatDeadline,
   formatRoleLabel,
   formatTaskStatus,
+  normalizeTaskProgress,
+  toDeadlineInputValue,
+  toDeadlinePayload,
   toOptionalNumber,
   toTaskStatusInput
 } from "../utils/format";
@@ -22,7 +28,8 @@ const initialTaskForm = {
   title: "",
   description: "",
   status: "todo",
-  assignee_id: ""
+  assignee_id: "",
+  deadline: ""
 };
 
 const initialCommentPagination = {
@@ -106,7 +113,8 @@ export default function TaskDetailPage({ currentUser, taskId }) {
           title: taskPayload.title || "",
           description: taskPayload.description || "",
           status: toTaskStatusInput(taskPayload.status),
-          assignee_id: taskPayload.assignee_id ? String(taskPayload.assignee_id) : ""
+          assignee_id: taskPayload.assignee_id ? String(taskPayload.assignee_id) : "",
+          deadline: toDeadlineInputValue(taskPayload.deadline)
         });
       } catch (err) {
         if (active) {
@@ -143,7 +151,8 @@ export default function TaskDetailPage({ currentUser, taskId }) {
       title: taskPayload.title || "",
       description: taskPayload.description || "",
       status: toTaskStatusInput(taskPayload.status),
-      assignee_id: taskPayload.assignee_id ? String(taskPayload.assignee_id) : ""
+      assignee_id: taskPayload.assignee_id ? String(taskPayload.assignee_id) : "",
+      deadline: toDeadlineInputValue(taskPayload.deadline)
     });
   }
 
@@ -152,6 +161,7 @@ export default function TaskDetailPage({ currentUser, taskId }) {
     scope: "project",
     projectId: project?.id,
     currentUserId: currentUser.id,
+    ignoreSelf: false,
     onEvent: async (event) => {
       if (!event.type || !event.type.startsWith("project.")) {
         return;
@@ -181,6 +191,7 @@ export default function TaskDetailPage({ currentUser, taskId }) {
     scope: "task",
     taskId,
     currentUserId: currentUser.id,
+    ignoreSelf: false,
     onEvent: async (event) => {
       if (!event.type) {
         return;
@@ -219,6 +230,7 @@ export default function TaskDetailPage({ currentUser, taskId }) {
       const nextTitle = taskForm.title.trim();
       const nextDescription = taskForm.description.trim();
       const nextAssigneeId = toOptionalNumber(taskForm.assignee_id);
+      const currentDeadlineInput = toDeadlineInputValue(task.deadline);
 
       if (canManageTask && nextTitle && nextTitle !== task.title) {
         payload.title = nextTitle;
@@ -234,6 +246,10 @@ export default function TaskDetailPage({ currentUser, taskId }) {
 
       if (canManageTask && nextAssigneeId && nextAssigneeId !== task.assignee_id) {
         payload.assignee_id = nextAssigneeId;
+      }
+
+      if (canManageTask && taskForm.deadline !== currentDeadlineInput) {
+        payload.deadline = toDeadlinePayload(taskForm.deadline);
       }
 
       if (Object.keys(payload).length === 0) {
@@ -354,10 +370,14 @@ export default function TaskDetailPage({ currentUser, taskId }) {
           <div className="mt-2 flex flex-wrap items-center gap-3">
             <h1 className="text-2xl font-semibold text-ink">{task.title}</h1>
             <StatusBadge status={task.status} />
+            <DeadlineBadge deadline={task.deadline} status={task.status} />
           </div>
           <p className="mt-2 max-w-3xl text-sm text-slate-600">
             {task.description || "Chưa có mô tả"}
           </p>
+          <div className="mt-4 max-w-xl">
+            <ProgressIndicator progress={task.progress} />
+          </div>
         </div>
 
         <button
@@ -516,6 +536,8 @@ export default function TaskDetailPage({ currentUser, taskId }) {
           <SectionCard title="Thông tin task" eyebrow="Task">
             <div className="rounded-lg border border-slate-200 px-4">
               <MetadataRow label="Trạng thái" value={formatTaskStatus(task.status)} />
+              <MetadataRow label="Tiến độ" value={`${normalizeTaskProgress(task.progress)}%`} />
+              <MetadataRow label="Deadline" value={formatDeadline(task.deadline)} />
               <MetadataRow label="Người phụ trách" value={getMemberName(members, task.assignee_id)} />
               <MetadataRow label="Người tạo" value={`User #${task.created_by}`} />
               <MetadataRow label="Project" value={project.name} />
@@ -531,7 +553,7 @@ export default function TaskDetailPage({ currentUser, taskId }) {
             eyebrow="Quy trình"
             description={
               canManageTask
-                ? "Bạn có thể cập nhật tiêu đề, mô tả, trạng thái và người phụ trách."
+                ? "Bạn có thể cập nhật tiêu đề, mô tả, trạng thái, người phụ trách và deadline."
                 : canUpdateTask
                   ? "Bạn được gán task này, có thể cập nhật trạng thái."
                   : "Bạn chỉ có quyền xem task này."
@@ -600,6 +622,17 @@ export default function TaskDetailPage({ currentUser, taskId }) {
                     </option>
                   ))}
                 </select>
+              </label>
+
+              <label className="block space-y-2">
+                <span className="text-sm font-semibold text-slate-700">Deadline</span>
+                <input
+                  className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
+                  disabled={!canManageTask}
+                  onChange={(event) => setTaskForm((prev) => ({ ...prev, deadline: event.target.value }))}
+                  type="datetime-local"
+                  value={taskForm.deadline}
+                />
               </label>
 
               <div className="flex flex-wrap gap-2">

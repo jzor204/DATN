@@ -8,10 +8,19 @@
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+html.dark {
+  color-scheme: dark;
+}
+
 body {
   min-height: 100vh;
   margin: 0;
   background: #f8fafc;
+}
+
+html.dark body {
+  background: #0f172a;
+  color: #e5e7eb;
 }
 
 h1,
@@ -35,4 +44,194 @@ textarea {
 
 .glass-panel {
   background: #ffffff;
+}
+
+html.dark .glass-panel,
+html.dark .bg-white {
+  background-color: #111827 !important;
+}
+
+html.dark .bg-slate-50,
+html.dark [class~="bg-slate-50"] {
+  background-color: #0f172a !important;
+}
+
+html.dark .bg-slate-100,
+html.dark [class~="bg-slate-100/70"] {
+  background-color: #1f2937 !important;
+}
+
+html.dark .bg-slate-900 {
+  background-color: #020617 !important;
+}
+
+html.dark .bg-blue-50 {
+  background-color: rgba(37, 99, 235, 0.18) !important;
+}
+
+html.dark .bg-blue-100 {
+  background-color: rgba(37, 99, 235, 0.36) !important;
+}
+
+html.dark .bg-emerald-50 {
+  background-color: rgba(16, 185, 129, 0.16) !important;
+}
+
+html.dark .bg-emerald-100 {
+  background-color: rgba(16, 185, 129, 0.42) !important;
+}
+
+html.dark .bg-red-50 {
+  background-color: rgba(239, 68, 68, 0.16) !important;
+}
+
+html.dark .bg-red-100 {
+  background-color: rgba(239, 68, 68, 0.34) !important;
+}
+
+html.dark .bg-yellow-50 {
+  background-color: rgba(234, 179, 8, 0.16) !important;
+}
+
+html.dark .bg-amber-50,
+html.dark [class~="bg-amber-50/70"] {
+  background-color: rgba(245, 158, 11, 0.16) !important;
+}
+
+html.dark .bg-amber-100 {
+  background-color: rgba(245, 158, 11, 0.32) !important;
+}
+
+html.dark .bg-orange-100 {
+  background-color: rgba(249, 115, 22, 0.32) !important;
+}
+
+html.dark .bg-indigo-100 {
+  background-color: rgba(99, 102, 241, 0.34) !important;
+}
+
+html.dark .border-slate-100,
+html.dark .border-slate-200,
+html.dark .border-slate-300 {
+  border-color: #334155 !important;
+}
+
+html.dark .border-blue-200 {
+  border-color: rgba(96, 165, 250, 0.45) !important;
+}
+
+html.dark .border-emerald-200 {
+  border-color: rgba(52, 211, 153, 0.45) !important;
+}
+
+html.dark .border-red-200,
+html.dark .border-red-300 {
+  border-color: rgba(248, 113, 113, 0.45) !important;
+}
+
+html.dark .border-amber-200,
+html.dark .border-amber-300,
+html.dark .border-amber-400 {
+  border-color: rgba(251, 191, 36, 0.5) !important;
+}
+
+html.dark .text-ink,
+html.dark .text-slate-900,
+html.dark .text-slate-800,
+html.dark .text-slate-700 {
+  color: #e5e7eb !important;
+}
+
+html.dark .text-slate-600,
+html.dark .text-slate-500 {
+  color: #cbd5e1 !important;
+}
+
+html.dark .text-slate-400 {
+  color: #94a3b8 !important;
+}
+
+html.dark .text-blue-700 {
+  color: #dbeafe !important;
+}
+
+html.dark .text-emerald-700,
+html.dark .text-emerald-800 {
+  color: #a7f3d0 !important;
+}
+
+html.dark .text-red-700,
+html.dark .text-red-600 {
+  color: #fee2e2 !important;
+}
+
+html.dark .text-amber-700,
+html.dark .text-amber-800,
+html.dark .text-amber-900,
+html.dark .text-orange-800 {
+  color: #fed7aa !important;
+}
+
+html.dark .text-indigo-700 {
+  color: #c7d2fe !important;
+}
+
+html.dark .placeholder\:text-slate-500::placeholder,
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+html.dark input,
+html.dark select,
+html.dark textarea {
+  background-color: #0f172a !important;
+  border-color: #334155 !important;
+  color: #e5e7eb !important;
+}
+
+html.dark input:focus,
+html.dark select:focus,
+html.dark textarea:focus {
+  border-color: #60a5fa !important;
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.18) !important;
+}
+
+html.dark option {
+  background-color: #111827;
+  color: #e5e7eb;
+}
+
+html.dark .shadow-panel {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.45) !important;
+}
+
+html.dark .hover\:bg-slate-50:hover {
+  background-color: #1f2937 !important;
+}
+
+html.dark .hover\:border-slate-500:hover {
+  border-color: #64748b !important;
+}
+
+html.dark .disabled\:bg-slate-400:disabled {
+  background-color: #475569 !important;
+}
+
+.task-card {
+  cursor: pointer;
+}
+
+.task-card:hover {
+  border-color: #2563eb !important;
+  box-shadow:
+    0 0 0 1px rgba(37, 99, 235, 0.38),
+    0 10px 24px rgba(15, 23, 42, 0.09) !important;
+}
+
+html.dark .task-card:hover {
+  border-color: #60a5fa !important;
+  box-shadow:
+    0 0 0 1px rgba(96, 165, 250, 0.8),
+    0 12px 28px rgba(0, 0, 0, 0.4) !important;
 }

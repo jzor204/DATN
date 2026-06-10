@@ -37,6 +37,7 @@ export function useRealtimeSubscription({
   projectId,
   taskId,
   currentUserId,
+  ignoreSelf = true,
   onEvent
 }) {
   const onEventRef = useRef(onEvent);
@@ -79,7 +80,7 @@ export function useRealtimeSubscription({
             return;
           }
 
-          if (currentUserId && Number(payload.triggered_by) === Number(currentUserId)) {
+          if (ignoreSelf && currentUserId && Number(payload.triggered_by) === Number(currentUserId)) {
             return;
           }
 
@@ -128,5 +129,5 @@ export function useRealtimeSubscription({
         socket.close();
       }
     };
-  }, [enabled, scope, projectId, taskId, currentUserId]);
+  }, [enabled, scope, projectId, taskId, currentUserId, ignoreSelf]);
 }
