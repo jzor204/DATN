@@ -1,0 +1,541 @@
+package usecase
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"task-management/internal/domain"
+	"task-management/internal/usecase/interfaces"
+)
+
+type TaskUsecase struct {
+	taskRepo      interfaces.TaskRepository
+	projectRepo   interfaces.ProjectRepository
+	userRepo      interfaces.UserRepository
+	accessService *AccessService
+	cacheService  interfaces.CacheService
+}
+
+type CreateTaskInput struct {
+	Title       string
+	Description string
+	AssigneeID  *uint
+	AssigneeIDs []uint
+	Deadline    *time.Time
+}
+
+type OptionalTimeInput struct {
+	Set   bool
+	Value *time.Time
+}
+
+type UpdateTaskInput struct {
+	Title       *string
+	Description *string
+	Status      *string
+	AssigneeID  *uint
+	AssigneeIDs OptionalUintSliceInput
+	Deadline    OptionalTimeInput
+}
+
+type OptionalUintSliceInput struct {
+	Set    bool
+	Values []uint
+}
+
+type TaskOutput struct {
+	ID          uint       `json:"id"`
+	ProjectID   uint       `json:"project_id"`
+	ProjectName string     `json:"project_name,omitempty"`
+	Title       string     `json:"title"`
+	Description string     `json:"description"`
+	Status      string     `json:"status"`
+	Progress    int        `json:"progress"`
+	AssigneeID  *uint      `json:"assignee_id"`
+	Assignees   []uint     `json:"assignee_ids"`
+	Deadline    *time.Time `json:"deadline"`
+	CreatedBy   uint       `json:"created_by"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+}
+
+type ListMyTasksInput struct {
+	ProjectID *uint
+	Status    string
+	Page      int
+	PageSize  int
+}
+
+type taskListCacheEntry struct {
+	Data  []TaskOutput `json:"data"`
+	Total int64        `json:"total"`
+}
+
+func NewTaskUsecase(
+	taskRepo interfaces.TaskRepository,
+	projectRepo interfaces.ProjectRepository,
+	userRepo interfaces.UserRepository,
+	accessService *AccessService,
+	cacheService interfaces.CacheService,
+) *TaskUsecase {
+	return &TaskUsecase{
+		taskRepo:      taskRepo,
+		projectRepo:   projectRepo,
+		userRepo:      userRepo,
+		accessService: accessService,
+		cacheService:  cacheService,
+	}
+}
+
+func (uc *TaskUsecase) Create(
+	ctx context.Context,
+	actorID uint,
+	globalRole string,
+	projectID uint,
+	input CreateTaskInput,
+) (*TaskOutput, error) {
+	project, err := uc.projectRepo.GetByID(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	if project == nil {
+		return nil, errors.New("project not found")
+	}
+
+	if err := uc.accessService.CanManageProject(ctx, projectID, actorID, globalRole); err != nil {
+		return nil, err
+	}
+
+	title := strings.TrimSpace(input.Title)
+	description := strings.TrimSpace(input.Description)
+
+	if title == "" {
+		return nil, errors.New("task title is required")
+	}
+
+	assigneeIDs := normalizeAssigneeIDs(input.AssigneeIDs)
+	if len(assigneeIDs) == 0 && input.AssigneeID != nil {
+		assigneeIDs = normalizeAssigneeIDs([]uint{*input.AssigneeID})
+	}
+	if err := uc.validateAssignees(ctx, projectID, assigneeIDs); err != nil {
+		return nil, err
+	}
+
+	var primaryAssigneeID *uint
+	if len(assigneeIDs) > 0 {
+		primaryAssigneeID = &assigneeIDs[0]
+	}
+
+	task := &domain.Task{
+		ProjectID:   projectID,
+		Title:       title,
+		Description: description,
+		Status:      domain.TaskStatusTodo,
+		Progress:    0,
+		AssigneeID:  primaryAssigneeID,
+		AssigneeIDs: assigneeIDs,
+		Deadline:    input.Deadline,
+		CreatedBy:   actorID,
+	}
+
+	if err := uc.taskRepo.Create(ctx, task); err != nil {
+		return nil, err
+	}
+
+	uc.invalidateTaskCaches(ctx, task.ID, task.ProjectID)
+
+	return toTaskOutput(task), nil
+}
+
+func (uc *TaskUsecase) ListByProject(
+	ctx context.Context,
+	actorID uint,
+	globalRole string,
+	projectID uint,
+	page int,
+	pageSize int,
+) ([]TaskOutput, int64, error) {
+	project, err := uc.projectRepo.GetByID(ctx, projectID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if project == nil {
+		return nil, 0, errors.New("project not found")
+	}
+
+	if err := uc.accessService.CanViewProject(ctx, projectID, actorID, globalRole); err != nil {
+		return nil, 0, err
+	}
+
+	page, pageSize = normalizePagination(page, pageSize)
+	cacheKey := fmt.Sprintf("project:%d:tasks:page:%d:size:%d", projectID, page, pageSize)
+
+	var cached taskListCacheEntry
+	if getCachedJSON(ctx, uc.cacheService, cacheKey, &cached) {
+		return cached.Data, cached.Total, nil
+	}
+
+	tasks, total, err := uc.taskRepo.ListByProject(ctx, projectID, page, pageSize)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	result := make([]TaskOutput, 0, len(tasks))
+	for _, task := range tasks {
+		result = append(result, *toTaskOutput(task))
+	}
+
+	setCachedJSON(ctx, uc.cacheService, cacheKey, taskListCacheEntry{
+		Data:  result,
+		Total: total,
+	}, readCacheTTL)
+
+	return result, total, nil
+}
+
+func (uc *TaskUsecase) ListAssignedToUser(
+	ctx context.Context,
+	actorID uint,
+	globalRole string,
+	input ListMyTasksInput,
+) ([]TaskOutput, int64, error) {
+	page, pageSize := normalizePagination(input.Page, input.PageSize)
+
+	status := strings.TrimSpace(input.Status)
+	if status != "" {
+		status = normalizeTaskStatus(status)
+		if !isValidTaskStatus(status) {
+			return nil, 0, errors.New("invalid task status")
+		}
+	}
+
+	if input.ProjectID != nil {
+		project, err := uc.projectRepo.GetByID(ctx, *input.ProjectID)
+		if err != nil {
+			return nil, 0, err
+		}
+		if project == nil {
+			return nil, 0, errors.New("project not found")
+		}
+
+		if err := uc.accessService.CanViewProject(ctx, *input.ProjectID, actorID, globalRole); err != nil {
+			return nil, 0, err
+		}
+	}
+
+	projectKey := "all"
+	if input.ProjectID != nil {
+		projectKey = fmt.Sprintf("%d", *input.ProjectID)
+	}
+	cacheKey := fmt.Sprintf("user:%d:tasks:role:%s:project:%s:status:%s:page:%d:size:%d", actorID, globalRole, projectKey, status, page, pageSize)
+
+	var cached taskListCacheEntry
+	if getCachedJSON(ctx, uc.cacheService, cacheKey, &cached) {
+		return cached.Data, cached.Total, nil
+	}
+
+	requireMembership := globalRole != domain.UserRoleAdmin
+	tasks, total, err := uc.taskRepo.ListAssignedToUser(
+		ctx,
+		actorID,
+		input.ProjectID,
+		status,
+		requireMembership,
+		page,
+		pageSize,
+	)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	projectNames := make(map[uint]string)
+	result := make([]TaskOutput, 0, len(tasks))
+	for _, task := range tasks {
+		output := *toTaskOutput(task)
+
+		projectName, ok := projectNames[task.ProjectID]
+		if !ok {
+			project, err := uc.projectRepo.GetByID(ctx, task.ProjectID)
+			if err != nil {
+				return nil, 0, err
+			}
+			if project != nil {
+				projectName = project.Name
+			}
+			projectNames[task.ProjectID] = projectName
+		}
+
+		output.ProjectName = projectName
+		result = append(result, output)
+	}
+
+	setCachedJSON(ctx, uc.cacheService, cacheKey, taskListCacheEntry{
+		Data:  result,
+		Total: total,
+	}, readCacheTTL)
+
+	return result, total, nil
+}
+
+func (uc *TaskUsecase) GetByID(
+	ctx context.Context,
+	actorID uint,
+	globalRole string,
+	taskID uint,
+) (*TaskOutput, error) {
+	cacheKey := fmt.Sprintf("task:%d:detail", taskID)
+	var cached TaskOutput
+	if getCachedJSON(ctx, uc.cacheService, cacheKey, &cached) {
+		if err := uc.accessService.CanViewProject(ctx, cached.ProjectID, actorID, globalRole); err != nil {
+			return nil, err
+		}
+		return &cached, nil
+	}
+
+	task, err := uc.taskRepo.GetByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if task == nil {
+		return nil, errors.New("task not found")
+	}
+
+	if err := uc.accessService.CanViewProject(ctx, task.ProjectID, actorID, globalRole); err != nil {
+		return nil, err
+	}
+
+	output := toTaskOutput(task)
+	setCachedJSON(ctx, uc.cacheService, cacheKey, output, readCacheTTL)
+
+	return output, nil
+}
+
+func (uc *TaskUsecase) Update(
+	ctx context.Context,
+	actorID uint,
+	globalRole string,
+	taskID uint,
+	input UpdateTaskInput,
+) (*TaskOutput, error) {
+	task, err := uc.taskRepo.GetByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if task == nil {
+		return nil, errors.New("task not found")
+	}
+
+	role, err := uc.accessService.GetProjectRole(ctx, task.ProjectID, actorID, globalRole)
+	if err != nil {
+		return nil, err
+	}
+
+	isSystemAdmin := globalRole == domain.UserRoleAdmin
+	isProjectManager := role == domain.ProjectRoleOwner || role == domain.ProjectRoleAdmin
+
+	if !isSystemAdmin && !isProjectManager {
+		if !taskHasAssignee(task, actorID) {
+			return nil, errors.New("forbidden: you can only update tasks assigned to you")
+		}
+
+		if input.Title != nil || input.Description != nil || input.AssigneeID != nil || input.AssigneeIDs.Set || input.Deadline.Set {
+			return nil, errors.New("forbidden: member can only update task status")
+		}
+
+		if input.Status == nil {
+			return nil, errors.New("status is required")
+		}
+
+		status := normalizeTaskStatus(*input.Status)
+		if !isValidTaskStatus(status) {
+			return nil, errors.New("invalid task status")
+		}
+		task.Status = status
+
+		if err := uc.taskRepo.Update(ctx, task); err != nil {
+			return nil, err
+		}
+
+		uc.invalidateTaskCaches(ctx, task.ID, task.ProjectID)
+
+		return toTaskOutput(task), nil
+	}
+
+	if input.Title != nil {
+		title := strings.TrimSpace(*input.Title)
+		if title == "" {
+			return nil, errors.New("task title cannot be empty")
+		}
+		task.Title = title
+	}
+
+	if input.Description != nil {
+		task.Description = strings.TrimSpace(*input.Description)
+	}
+
+	if input.Status != nil {
+		status := normalizeTaskStatus(*input.Status)
+		if !isValidTaskStatus(status) {
+			return nil, errors.New("invalid task status")
+		}
+		task.Status = status
+	}
+
+	if input.AssigneeID != nil {
+		if err := uc.validateAssignees(ctx, task.ProjectID, []uint{*input.AssigneeID}); err != nil {
+			return nil, err
+		}
+		task.AssigneeIDs = []uint{*input.AssigneeID}
+		task.AssigneeID = input.AssigneeID
+	}
+
+	if input.AssigneeIDs.Set {
+		assigneeIDs := normalizeAssigneeIDs(input.AssigneeIDs.Values)
+		if err := uc.validateAssignees(ctx, task.ProjectID, assigneeIDs); err != nil {
+			return nil, err
+		}
+
+		task.AssigneeIDs = assigneeIDs
+		task.AssigneeID = nil
+		if len(assigneeIDs) > 0 {
+			task.AssigneeID = &assigneeIDs[0]
+		}
+	}
+
+	if input.Deadline.Set {
+		task.Deadline = input.Deadline.Value
+	}
+
+	if err := uc.taskRepo.Update(ctx, task); err != nil {
+		return nil, err
+	}
+
+	uc.invalidateTaskCaches(ctx, task.ID, task.ProjectID)
+
+	return toTaskOutput(task), nil
+}
+
+func (uc *TaskUsecase) Delete(
+	ctx context.Context,
+	actorID uint,
+	globalRole string,
+	taskID uint,
+) error {
+	task, err := uc.taskRepo.GetByID(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	if task == nil {
+		return errors.New("task not found")
+	}
+
+	if err := uc.accessService.CanManageProject(ctx, task.ProjectID, actorID, globalRole); err != nil {
+		return err
+	}
+
+	if err := uc.taskRepo.Delete(ctx, taskID); err != nil {
+		return err
+	}
+
+	uc.invalidateTaskCaches(ctx, taskID, task.ProjectID)
+	return nil
+}
+
+func (uc *TaskUsecase) invalidateTaskCaches(ctx context.Context, taskID uint, projectID uint) {
+	deleteCacheKeys(ctx, uc.cacheService, fmt.Sprintf("task:%d:detail", taskID))
+	deleteCachePatterns(ctx, uc.cacheService,
+		fmt.Sprintf("task:%d:comments:*", taskID),
+		fmt.Sprintf("task:%d:checklists", taskID),
+		fmt.Sprintf("project:%d:tasks:*", projectID),
+		"user:*:tasks:*",
+	)
+}
+
+func toTaskOutput(task *domain.Task) *TaskOutput {
+	assigneeIDs := normalizeAssigneeIDs(task.AssigneeIDs)
+	if len(assigneeIDs) == 0 && task.AssigneeID != nil {
+		assigneeIDs = []uint{*task.AssigneeID}
+	}
+
+	return &TaskOutput{
+		ID:          task.ID,
+		ProjectID:   task.ProjectID,
+		Title:       task.Title,
+		Description: task.Description,
+		Status:      task.Status,
+		Progress:    task.Progress,
+		AssigneeID:  task.AssigneeID,
+		Assignees:   assigneeIDs,
+		Deadline:    task.Deadline,
+		CreatedBy:   task.CreatedBy,
+		CreatedAt:   task.CreatedAt,
+		UpdatedAt:   task.UpdatedAt,
+	}
+}
+
+func normalizeTaskStatus(status string) string {
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status == "in-progress" {
+		return domain.TaskStatusInProgress
+	}
+	return status
+}
+
+func isValidTaskStatus(status string) bool {
+	return status == domain.TaskStatusTodo ||
+		status == domain.TaskStatusInProgress ||
+		status == domain.TaskStatusDone
+}
+
+func (uc *TaskUsecase) validateAssignees(ctx context.Context, projectID uint, userIDs []uint) error {
+	for _, userID := range userIDs {
+		user, err := uc.userRepo.GetByID(ctx, userID)
+		if err != nil {
+			return err
+		}
+		if user == nil {
+			return errors.New("assignee not found")
+		}
+
+		member, err := uc.projectRepo.GetMember(ctx, projectID, userID)
+		if err != nil {
+			return err
+		}
+		if member == nil {
+			return errors.New("assignee must be a member of this project")
+		}
+	}
+
+	return nil
+}
+
+func normalizeAssigneeIDs(userIDs []uint) []uint {
+	seen := make(map[uint]struct{}, len(userIDs))
+	result := make([]uint, 0, len(userIDs))
+
+	for _, userID := range userIDs {
+		if userID == 0 {
+			continue
+		}
+		if _, ok := seen[userID]; ok {
+			continue
+		}
+		seen[userID] = struct{}{}
+		result = append(result, userID)
+	}
+
+	return result
+}
+
+func taskHasAssignee(task *domain.Task, userID uint) bool {
+	for _, assigneeID := range task.AssigneeIDs {
+		if assigneeID == userID {
+			return true
+		}
+	}
+
+	return task.AssigneeID != nil && *task.AssigneeID == userID
+}
