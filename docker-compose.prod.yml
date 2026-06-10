@@ -33,7 +33,7 @@ services:
 
   api:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
     container_name: task_management_api_prod
     restart: unless-stopped

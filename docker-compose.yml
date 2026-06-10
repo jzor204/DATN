@@ -23,7 +23,9 @@ services:
       - "6379:6379"
 
   api:
-    build: .
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     container_name: task_management_api
     restart: unless-stopped
     depends_on:

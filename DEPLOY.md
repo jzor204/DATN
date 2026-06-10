@@ -188,22 +188,22 @@ docker compose --env-file .env.production -f docker-compose.prod.yml logs -f ngi
 
 ## 6. Chay migration database
 
-Backend hien tai khong tu dong chay migration, nen can import cac file SQL trong `migrations`.
+Backend hien tai khong tu dong chay migration, nen can import cac file SQL trong `backend/migrations`.
 
 Sau khi MySQL container da healthy, chay:
 
 ```bash
-cat migrations/*.up.sql | docker compose --env-file .env.production -f docker-compose.prod.yml exec -T mysql sh -c 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"'
+cat backend/migrations/*.up.sql | docker compose --env-file .env.production -f docker-compose.prod.yml exec -T mysql sh -c 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"'
 ```
 
 Neu muon chay tung file de de theo doi loi, dung cach sau:
 
 ```bash
-docker compose --env-file .env.production -f docker-compose.prod.yml exec -T mysql sh -c 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' < migrations/000001_create_users_table.up.sql
-docker compose --env-file .env.production -f docker-compose.prod.yml exec -T mysql sh -c 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' < migrations/000002_create_projects_table.up.sql
-docker compose --env-file .env.production -f docker-compose.prod.yml exec -T mysql sh -c 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' < migrations/000003_create_project_members_table.up.sql
-docker compose --env-file .env.production -f docker-compose.prod.yml exec -T mysql sh -c 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' < migrations/000004_create_tasks_table.up.sql
-docker compose --env-file .env.production -f docker-compose.prod.yml exec -T mysql sh -c 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' < migrations/000005_create_comments_table.up.sql
+docker compose --env-file .env.production -f docker-compose.prod.yml exec -T mysql sh -c 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' < backend/migrations/000001_create_users_table.up.sql
+docker compose --env-file .env.production -f docker-compose.prod.yml exec -T mysql sh -c 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' < backend/migrations/000002_create_projects_table.up.sql
+docker compose --env-file .env.production -f docker-compose.prod.yml exec -T mysql sh -c 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' < backend/migrations/000003_create_project_members_table.up.sql
+docker compose --env-file .env.production -f docker-compose.prod.yml exec -T mysql sh -c 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' < backend/migrations/000004_create_tasks_table.up.sql
+docker compose --env-file .env.production -f docker-compose.prod.yml exec -T mysql sh -c 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' < backend/migrations/000005_create_comments_table.up.sql
 ```
 
 ## 7. Tao seed data neu can
