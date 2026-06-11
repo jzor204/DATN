@@ -17,6 +17,7 @@ type ChecklistItemUsecase struct {
 	taskRepo      interfaces.TaskRepository
 	accessService *AccessService
 	cacheService  interfaces.CacheService
+	activity      *ActivityUsecase
 }
 
 type CreateChecklistInput struct {
@@ -69,6 +70,10 @@ func NewChecklistItemUsecase(
 		accessService: accessService,
 		cacheService:  cacheService,
 	}
+}
+
+func (uc *ChecklistItemUsecase) SetActivityUsecase(activity *ActivityUsecase) {
+	uc.activity = activity
 }
 
 func (uc *ChecklistItemUsecase) ListByTask(
@@ -156,6 +161,10 @@ func (uc *ChecklistItemUsecase) CreateChecklist(
 	}
 
 	uc.invalidateChecklistCaches(ctx, task.ID, task.ProjectID)
+	uc.recordActivity(ctx, actorID, domain.ActivityTypeChecklistCreated, fmt.Sprintf("Đã thêm checklist \"%s\".", checklist.Title), task, map[string]interface{}{
+		"checklist_id": checklist.ID,
+		"title":        checklist.Title,
+	})
 
 	return toChecklistOutput(checklist), nil
 }
@@ -181,6 +190,10 @@ func (uc *ChecklistItemUsecase) DeleteChecklist(
 	}
 
 	uc.invalidateChecklistCaches(ctx, task.ID, task.ProjectID)
+	uc.recordActivity(ctx, actorID, domain.ActivityTypeChecklistDeleted, fmt.Sprintf("Đã xóa checklist \"%s\".", checklist.Title), task, map[string]interface{}{
+		"checklist_id": checklist.ID,
+		"title":        checklist.Title,
+	})
 
 	return task.ID, progress, nil
 }
@@ -226,6 +239,11 @@ func (uc *ChecklistItemUsecase) CreateItem(
 	}
 
 	uc.invalidateChecklistCaches(ctx, task.ID, task.ProjectID)
+	uc.recordActivity(ctx, actorID, domain.ActivityTypeChecklistItemCreated, fmt.Sprintf("Đã thêm mục \"%s\".", item.Title), task, map[string]interface{}{
+		"checklist_id": checklist.ID,
+		"item_id":      item.ID,
+		"title":        item.Title,
+	})
 
 	return toChecklistItemOutput(item), progress, nil
 }
@@ -272,6 +290,11 @@ func (uc *ChecklistItemUsecase) Update(
 	}
 
 	uc.invalidateChecklistCaches(ctx, task.ID, task.ProjectID)
+	uc.recordActivity(ctx, actorID, domain.ActivityTypeChecklistItemUpdated, fmt.Sprintf("Đã cập nhật mục \"%s\".", item.Title), task, map[string]interface{}{
+		"item_id": item.ID,
+		"title":   item.Title,
+		"is_done": item.IsDone,
+	})
 
 	return toChecklistItemOutput(item), progress, nil
 }
@@ -305,6 +328,10 @@ func (uc *ChecklistItemUsecase) Delete(
 	}
 
 	uc.invalidateChecklistCaches(ctx, task.ID, task.ProjectID)
+	uc.recordActivity(ctx, actorID, domain.ActivityTypeChecklistItemDeleted, fmt.Sprintf("Đã xóa mục \"%s\".", item.Title), task, map[string]interface{}{
+		"item_id": item.ID,
+		"title":   item.Title,
+	})
 
 	return task.ID, progress, nil
 }
@@ -313,9 +340,34 @@ func (uc *ChecklistItemUsecase) invalidateChecklistCaches(ctx context.Context, t
 	deleteCacheKeys(ctx, uc.cacheService, fmt.Sprintf("task:%d:detail", taskID))
 	deleteCachePatterns(ctx, uc.cacheService,
 		fmt.Sprintf("task:%d:checklists", taskID),
+		fmt.Sprintf("task:%d:activities:*", taskID),
 		fmt.Sprintf("project:%d:tasks:*", projectID),
 		"user:*:tasks:*",
 	)
+}
+
+func (uc *ChecklistItemUsecase) recordActivity(
+	ctx context.Context,
+	actorID uint,
+	activityType string,
+	message string,
+	task *domain.Task,
+	payload map[string]interface{},
+) {
+	if uc.activity == nil || task == nil {
+		return
+	}
+
+	taskID := task.ID
+	actor := actorID
+	_, _ = uc.activity.Record(ctx, RecordActivityInput{
+		ProjectID: task.ProjectID,
+		TaskID:    &taskID,
+		ActorID:   &actor,
+		Type:      activityType,
+		Message:   message,
+		Payload:   payload,
+	})
 }
 
 func (uc *ChecklistItemUsecase) getEditableChecklist(

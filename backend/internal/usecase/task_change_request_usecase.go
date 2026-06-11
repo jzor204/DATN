@@ -21,6 +21,7 @@ type TaskChangeRequestUsecase struct {
 	taskUsecase       *TaskUsecase
 	accessService     *AccessService
 	cacheService      interfaces.CacheService
+	activity          *ActivityUsecase
 }
 
 type CreateTaskChangeRequestInput struct {
@@ -33,22 +34,26 @@ type CreateTaskChangeRequestInput struct {
 }
 
 type ReviewTaskChangeRequestInput struct {
-	Decision string
+	ReviewNote string
 }
 
 type TaskChangeRequestOutput struct {
-	ID          uint                   `json:"id"`
-	TaskID      uint                   `json:"task_id"`
-	ProjectID   uint                   `json:"project_id"`
-	RequestedBy uint                   `json:"requested_by"`
-	Requester   *UserReferenceOutput   `json:"requester,omitempty"`
-	Payload     map[string]interface{} `json:"payload"`
-	Reason      string                 `json:"reason"`
-	Status      string                 `json:"status"`
-	ReviewedBy  *uint                  `json:"reviewed_by"`
-	ReviewedAt  *time.Time             `json:"reviewed_at"`
-	CreatedAt   time.Time              `json:"created_at"`
-	UpdatedAt   time.Time              `json:"updated_at"`
+	ID            uint                   `json:"id"`
+	TaskID        uint                   `json:"task_id"`
+	ProjectID     uint                   `json:"project_id"`
+	RequestedBy   uint                   `json:"requested_by"`
+	Requester     *UserReferenceOutput   `json:"requester,omitempty"`
+	Payload       map[string]interface{} `json:"payload"`
+	CurrentValues map[string]interface{} `json:"current_values"`
+	Reason        string                 `json:"reason"`
+	TaskUpdatedAt *time.Time             `json:"task_updated_at"`
+	Conflict      bool                   `json:"conflict"`
+	Status        string                 `json:"status"`
+	ReviewedBy    *uint                  `json:"reviewed_by"`
+	ReviewedAt    *time.Time             `json:"reviewed_at"`
+	ReviewNote    string                 `json:"review_note"`
+	CreatedAt     time.Time              `json:"created_at"`
+	UpdatedAt     time.Time              `json:"updated_at"`
 }
 
 type UserReferenceOutput struct {
@@ -66,6 +71,11 @@ type ReviewTaskChangeRequestResult struct {
 	Request       *TaskChangeRequestOutput `json:"request"`
 	Task          *TaskOutput              `json:"task,omitempty"`
 	Notifications []NotificationOutput     `json:"notifications"`
+}
+
+type changeRequestListCacheEntry struct {
+	Data  []TaskChangeRequestOutput `json:"data"`
+	Total int64                     `json:"total"`
 }
 
 func NewTaskChangeRequestUsecase(
@@ -90,6 +100,10 @@ func NewTaskChangeRequestUsecase(
 	}
 }
 
+func (uc *TaskChangeRequestUsecase) SetActivityUsecase(activity *ActivityUsecase) {
+	uc.activity = activity
+}
+
 func (uc *TaskChangeRequestUsecase) Create(
 	ctx context.Context,
 	actorID uint,
@@ -109,6 +123,14 @@ func (uc *TaskChangeRequestUsecase) Create(
 		return nil, err
 	}
 
+	hasPendingRequest, err := uc.changeRequestRepo.HasPendingByTaskAndRequester(ctx, task.ID, actorID)
+	if err != nil {
+		return nil, err
+	}
+	if hasPendingRequest {
+		return nil, errors.New("you already have a pending change request for this task")
+	}
+
 	payload, err := uc.buildRequestedChanges(ctx, task, input)
 	if err != nil {
 		return nil, err
@@ -118,12 +140,13 @@ func (uc *TaskChangeRequestUsecase) Create(
 	}
 
 	request := &domain.TaskChangeRequest{
-		TaskID:      task.ID,
-		ProjectID:   task.ProjectID,
-		RequestedBy: actorID,
-		PayloadJSON: encodePayload(payload),
-		Reason:      strings.TrimSpace(input.Reason),
-		Status:      domain.TaskChangeRequestStatusPending,
+		TaskID:        task.ID,
+		ProjectID:     task.ProjectID,
+		RequestedBy:   actorID,
+		PayloadJSON:   encodePayload(payload),
+		Reason:        strings.TrimSpace(input.Reason),
+		TaskUpdatedAt: &task.UpdatedAt,
+		Status:        domain.TaskChangeRequestStatusPending,
 	}
 
 	if err := uc.changeRequestRepo.Create(ctx, request); err != nil {
@@ -135,8 +158,18 @@ func (uc *TaskChangeRequestUsecase) Create(
 	if err != nil {
 		return nil, err
 	}
+	requesterNotifications, err := uc.createRequesterPendingNotification(ctx, request, task)
+	if err != nil {
+		return nil, err
+	}
+	notifications = append(notifications, requesterNotifications...)
 
-	uc.invalidateChangeRequestCaches(ctx, request.ID, request.ProjectID, actorID)
+	uc.invalidateChangeRequestCaches(ctx, request.ID, request.ProjectID, request.TaskID, actorID)
+	uc.recordActivity(ctx, actorID, domain.ActivityTypeChangeRequestCreated, "Đã gửi yêu cầu thay đổi công việc.", request, task, map[string]interface{}{
+		"change_request_id": request.ID,
+		"requested_changes": payload,
+		"reason":            request.Reason,
+	})
 
 	return &CreateTaskChangeRequestResult{
 		Request:       uc.toTaskChangeRequestOutput(ctx, request),
@@ -144,11 +177,86 @@ func (uc *TaskChangeRequestUsecase) Create(
 	}, nil
 }
 
+func (uc *TaskChangeRequestUsecase) GetByID(
+	ctx context.Context,
+	actorID uint,
+	globalRole string,
+	requestID uint,
+) (*TaskChangeRequestOutput, error) {
+	request, err := uc.changeRequestRepo.GetByID(ctx, requestID)
+	if err != nil {
+		return nil, err
+	}
+	if request == nil {
+		return nil, errors.New("change request not found")
+	}
+
+	if err := uc.canViewRequest(ctx, actorID, globalRole, request); err != nil {
+		return nil, err
+	}
+
+	return uc.toTaskChangeRequestOutput(ctx, request), nil
+}
+
+func (uc *TaskChangeRequestUsecase) ListByTask(
+	ctx context.Context,
+	actorID uint,
+	globalRole string,
+	taskID uint,
+	page int,
+	pageSize int,
+) ([]TaskChangeRequestOutput, int64, error) {
+	task, err := uc.taskRepo.GetByID(ctx, taskID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if task == nil {
+		return nil, 0, errors.New("task not found")
+	}
+
+	if err := uc.accessService.CanViewProject(ctx, task.ProjectID, actorID, globalRole); err != nil {
+		return nil, 0, err
+	}
+
+	var requesterID *uint
+	visibility := "all"
+	if !uc.canManageProject(ctx, actorID, globalRole, task.ProjectID) {
+		requesterID = &actorID
+		visibility = fmt.Sprintf("user:%d", actorID)
+	}
+
+	page, pageSize = normalizePagination(page, pageSize)
+	cacheKey := fmt.Sprintf("task:%d:change-requests:%s:page:%d:size:%d", taskID, visibility, page, pageSize)
+
+	var cached changeRequestListCacheEntry
+	if getCachedJSON(ctx, uc.cacheService, cacheKey, &cached) {
+		return cached.Data, cached.Total, nil
+	}
+
+	requests, total, err := uc.changeRequestRepo.ListByTask(ctx, taskID, requesterID, page, pageSize)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	result := make([]TaskChangeRequestOutput, 0, len(requests))
+	for _, request := range requests {
+		result = append(result, *uc.toTaskChangeRequestOutputWithTask(ctx, request, task))
+	}
+
+	setCachedJSON(ctx, uc.cacheService, cacheKey, changeRequestListCacheEntry{
+		Data:  result,
+		Total: total,
+	}, readCacheTTL)
+
+	return result, total, nil
+}
+
 func (uc *TaskChangeRequestUsecase) Approve(
 	ctx context.Context,
 	reviewerID uint,
 	globalRole string,
 	requestID uint,
+	input ReviewTaskChangeRequestInput,
 ) (*ReviewTaskChangeRequestResult, error) {
 	request, err := uc.getPendingRequest(ctx, requestID)
 	if err != nil {
@@ -157,6 +265,17 @@ func (uc *TaskChangeRequestUsecase) Approve(
 
 	if err := uc.accessService.CanManageProject(ctx, request.ProjectID, reviewerID, globalRole); err != nil {
 		return nil, err
+	}
+
+	currentTask, err := uc.taskRepo.GetByID(ctx, request.TaskID)
+	if err != nil {
+		return nil, err
+	}
+	if currentTask == nil {
+		return nil, errors.New("task not found")
+	}
+	if request.TaskUpdatedAt != nil && currentTask.UpdatedAt.After(request.TaskUpdatedAt.Add(time.Second)) {
+		return nil, errors.New("change request conflict: task was updated after this request was created")
 	}
 
 	updateInput, err := updateTaskInputFromPayload(request.PayloadJSON)
@@ -169,9 +288,13 @@ func (uc *TaskChangeRequestUsecase) Approve(
 		return nil, err
 	}
 
-	if err := uc.markReviewed(ctx, request, reviewerID, domain.TaskChangeRequestStatusApproved); err != nil {
+	if err := uc.markReviewed(ctx, request, reviewerID, domain.TaskChangeRequestStatusApproved, input.ReviewNote); err != nil {
 		return nil, err
 	}
+	uc.recordActivity(ctx, reviewerID, domain.ActivityTypeChangeRequestApproved, "Đã duyệt yêu cầu thay đổi công việc.", request, currentTask, map[string]interface{}{
+		"change_request_id": request.ID,
+		"review_note":       request.ReviewNote,
+	})
 
 	notifications, err := uc.createRequesterReviewNotification(ctx, request, updatedTask, domain.NotificationTypeTaskChangeRequestApproved)
 	if err != nil {
@@ -190,6 +313,7 @@ func (uc *TaskChangeRequestUsecase) Reject(
 	reviewerID uint,
 	globalRole string,
 	requestID uint,
+	input ReviewTaskChangeRequestInput,
 ) (*ReviewTaskChangeRequestResult, error) {
 	request, err := uc.getPendingRequest(ctx, requestID)
 	if err != nil {
@@ -208,9 +332,13 @@ func (uc *TaskChangeRequestUsecase) Reject(
 		return nil, errors.New("task not found")
 	}
 
-	if err := uc.markReviewed(ctx, request, reviewerID, domain.TaskChangeRequestStatusRejected); err != nil {
+	if err := uc.markReviewed(ctx, request, reviewerID, domain.TaskChangeRequestStatusRejected, input.ReviewNote); err != nil {
 		return nil, err
 	}
+	uc.recordActivity(ctx, reviewerID, domain.ActivityTypeChangeRequestRejected, "Đã từ chối yêu cầu thay đổi công việc.", request, task, map[string]interface{}{
+		"change_request_id": request.ID,
+		"review_note":       request.ReviewNote,
+	})
 
 	taskOutput := toTaskOutput(task)
 	notifications, err := uc.createRequesterReviewNotification(ctx, request, taskOutput, domain.NotificationTypeTaskChangeRequestRejected)
@@ -221,6 +349,50 @@ func (uc *TaskChangeRequestUsecase) Reject(
 	return &ReviewTaskChangeRequestResult{
 		Request:       uc.toTaskChangeRequestOutput(ctx, request),
 		Task:          taskOutput,
+		Notifications: notifications,
+	}, nil
+}
+
+func (uc *TaskChangeRequestUsecase) Cancel(
+	ctx context.Context,
+	actorID uint,
+	globalRole string,
+	requestID uint,
+) (*ReviewTaskChangeRequestResult, error) {
+	request, err := uc.getPendingRequest(ctx, requestID)
+	if err != nil {
+		return nil, err
+	}
+
+	if request.RequestedBy != actorID {
+		if err := uc.accessService.CanManageProject(ctx, request.ProjectID, actorID, globalRole); err != nil {
+			return nil, errors.New("forbidden: only requester or project manager can cancel this change request")
+		}
+	}
+
+	task, err := uc.taskRepo.GetByID(ctx, request.TaskID)
+	if err != nil {
+		return nil, err
+	}
+	if task == nil {
+		return nil, errors.New("task not found")
+	}
+
+	if err := uc.markReviewed(ctx, request, actorID, domain.TaskChangeRequestStatusCanceled, ""); err != nil {
+		return nil, err
+	}
+	uc.recordActivity(ctx, actorID, domain.ActivityTypeChangeRequestCanceled, "Đã hủy yêu cầu thay đổi công việc.", request, task, map[string]interface{}{
+		"change_request_id": request.ID,
+	})
+
+	notifications, err := uc.createManagerCancelNotifications(ctx, request, task, actorID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ReviewTaskChangeRequestResult{
+		Request:       uc.toTaskChangeRequestOutput(ctx, request),
+		Task:          toTaskOutput(task),
 		Notifications: notifications,
 	}, nil
 }
@@ -324,17 +496,19 @@ func (uc *TaskChangeRequestUsecase) markReviewed(
 	request *domain.TaskChangeRequest,
 	reviewerID uint,
 	status string,
+	reviewNote string,
 ) error {
 	now := time.Now().UTC()
 	request.Status = status
 	request.ReviewedBy = &reviewerID
 	request.ReviewedAt = &now
+	request.ReviewNote = strings.TrimSpace(reviewNote)
 
 	if err := uc.changeRequestRepo.UpdateReview(ctx, request); err != nil {
 		return err
 	}
 
-	uc.invalidateChangeRequestCaches(ctx, request.ID, request.ProjectID, request.RequestedBy)
+	uc.invalidateChangeRequestCaches(ctx, request.ID, request.ProjectID, request.TaskID, request.RequestedBy)
 	uc.invalidateNotificationCaches(ctx, request.RequestedBy)
 	uc.invalidateNotificationCaches(ctx, reviewerID)
 
@@ -390,6 +564,7 @@ func (uc *TaskChangeRequestUsecase) createManagerNotifications(
 				"requester_name":        requester.Name,
 				"requested_changes":     decodePayload(request.PayloadJSON),
 				"reason":                request.Reason,
+				"task_updated_at":       request.TaskUpdatedAt,
 			}),
 		}
 
@@ -402,6 +577,92 @@ func (uc *TaskChangeRequestUsecase) createManagerNotifications(
 	}
 
 	return notifications, nil
+}
+
+func (uc *TaskChangeRequestUsecase) createManagerCancelNotifications(
+	ctx context.Context,
+	request *domain.TaskChangeRequest,
+	task *domain.Task,
+	actorID uint,
+) ([]NotificationOutput, error) {
+	managers, err := uc.projectRepo.ListManagers(ctx, request.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+
+	requester := uc.userReference(ctx, request.RequestedBy)
+	notifications := make([]NotificationOutput, 0, len(managers))
+	seen := make(map[uint]struct{}, len(managers))
+	for _, manager := range managers {
+		if manager.UserID == actorID {
+			continue
+		}
+		if _, ok := seen[manager.UserID]; ok {
+			continue
+		}
+		seen[manager.UserID] = struct{}{}
+
+		notification := &domain.Notification{
+			UserID:  manager.UserID,
+			ActorID: &actorID,
+			Type:    domain.NotificationTypeTaskChangeRequest,
+			Title:   "Yêu cầu thay đổi đã hủy",
+			Message: fmt.Sprintf("%s đã hủy yêu cầu thay đổi task \"%s\".", requester.Name, task.Title),
+			PayloadJSON: encodePayload(map[string]interface{}{
+				"change_request_id":     request.ID,
+				"change_request_status": request.Status,
+				"task_id":               request.TaskID,
+				"project_id":            request.ProjectID,
+				"task_title":            task.Title,
+				"requester_id":          request.RequestedBy,
+				"requester_name":        requester.Name,
+				"requested_changes":     decodePayload(request.PayloadJSON),
+				"reason":                request.Reason,
+			}),
+		}
+
+		if err := uc.notificationRepo.Create(ctx, notification); err != nil {
+			return nil, err
+		}
+
+		uc.invalidateNotificationCaches(ctx, manager.UserID)
+		notifications = append(notifications, *toNotificationOutputWithoutEnrichment(notification))
+	}
+
+	return notifications, nil
+}
+
+func (uc *TaskChangeRequestUsecase) createRequesterPendingNotification(
+	ctx context.Context,
+	request *domain.TaskChangeRequest,
+	task *domain.Task,
+) ([]NotificationOutput, error) {
+	actorID := request.RequestedBy
+	notification := &domain.Notification{
+		UserID:  request.RequestedBy,
+		ActorID: &actorID,
+		Type:    domain.NotificationTypeTaskChangeRequest,
+		Title:   "Yêu cầu thay đổi đang chờ duyệt",
+		Message: fmt.Sprintf("Yêu cầu thay đổi task \"%s\" đã được gửi đến owner/admin.", task.Title),
+		PayloadJSON: encodePayload(map[string]interface{}{
+			"change_request_id":     request.ID,
+			"change_request_status": request.Status,
+			"task_id":               request.TaskID,
+			"project_id":            request.ProjectID,
+			"task_title":            task.Title,
+			"requester_id":          request.RequestedBy,
+			"requested_changes":     decodePayload(request.PayloadJSON),
+			"reason":                request.Reason,
+			"task_updated_at":       request.TaskUpdatedAt,
+		}),
+	}
+
+	if err := uc.notificationRepo.Create(ctx, notification); err != nil {
+		return nil, err
+	}
+
+	uc.invalidateNotificationCaches(ctx, request.RequestedBy)
+	return []NotificationOutput{*toNotificationOutputWithoutEnrichment(notification)}, nil
 }
 
 func (uc *TaskChangeRequestUsecase) createRequesterReviewNotification(
@@ -435,6 +696,7 @@ func (uc *TaskChangeRequestUsecase) createRequesterReviewNotification(
 			"project_id":            request.ProjectID,
 			"task_title":            task.Title,
 			"requested_changes":     decodePayload(request.PayloadJSON),
+			"review_note":           request.ReviewNote,
 		}),
 	}
 
@@ -467,27 +729,137 @@ func (uc *TaskChangeRequestUsecase) userReference(ctx context.Context, userID ui
 	}
 }
 
+func (uc *TaskChangeRequestUsecase) canManageProject(ctx context.Context, actorID uint, globalRole string, projectID uint) bool {
+	return uc.accessService.CanManageProject(ctx, projectID, actorID, globalRole) == nil
+}
+
+func (uc *TaskChangeRequestUsecase) canViewRequest(
+	ctx context.Context,
+	actorID uint,
+	globalRole string,
+	request *domain.TaskChangeRequest,
+) error {
+	if err := uc.accessService.CanViewProject(ctx, request.ProjectID, actorID, globalRole); err != nil {
+		return err
+	}
+
+	if request.RequestedBy == actorID || uc.canManageProject(ctx, actorID, globalRole, request.ProjectID) {
+		return nil
+	}
+
+	return errors.New("forbidden: you can only view your own change requests")
+}
+
 func (uc *TaskChangeRequestUsecase) toTaskChangeRequestOutput(ctx context.Context, request *domain.TaskChangeRequest) *TaskChangeRequestOutput {
+	var task *domain.Task
+	if request.TaskID != 0 {
+		task, _ = uc.taskRepo.GetByID(ctx, request.TaskID)
+	}
+
+	return uc.toTaskChangeRequestOutputWithTask(ctx, request, task)
+}
+
+func (uc *TaskChangeRequestUsecase) toTaskChangeRequestOutputWithTask(
+	ctx context.Context,
+	request *domain.TaskChangeRequest,
+	task *domain.Task,
+) *TaskChangeRequestOutput {
+	payload := decodePayload(request.PayloadJSON)
+
 	return &TaskChangeRequestOutput{
-		ID:          request.ID,
-		TaskID:      request.TaskID,
-		ProjectID:   request.ProjectID,
-		RequestedBy: request.RequestedBy,
-		Requester:   uc.userReference(ctx, request.RequestedBy),
-		Payload:     decodePayload(request.PayloadJSON),
-		Reason:      request.Reason,
-		Status:      request.Status,
-		ReviewedBy:  request.ReviewedBy,
-		ReviewedAt:  request.ReviewedAt,
-		CreatedAt:   request.CreatedAt,
-		UpdatedAt:   request.UpdatedAt,
+		ID:            request.ID,
+		TaskID:        request.TaskID,
+		ProjectID:     request.ProjectID,
+		RequestedBy:   request.RequestedBy,
+		Requester:     uc.userReference(ctx, request.RequestedBy),
+		Payload:       payload,
+		CurrentValues: currentValuesForRequest(task, payload),
+		Reason:        request.Reason,
+		TaskUpdatedAt: request.TaskUpdatedAt,
+		Conflict:      changeRequestHasConflict(task, request),
+		Status:        request.Status,
+		ReviewedBy:    request.ReviewedBy,
+		ReviewedAt:    request.ReviewedAt,
+		ReviewNote:    request.ReviewNote,
+		CreatedAt:     request.CreatedAt,
+		UpdatedAt:     request.UpdatedAt,
 	}
 }
 
-func (uc *TaskChangeRequestUsecase) invalidateChangeRequestCaches(ctx context.Context, requestID uint, projectID uint, requesterID uint) {
+func currentValuesForRequest(task *domain.Task, payload map[string]interface{}) map[string]interface{} {
+	current := map[string]interface{}{}
+	if task == nil {
+		return current
+	}
+
+	for key := range payload {
+		switch key {
+		case "title":
+			current[key] = task.Title
+		case "description":
+			current[key] = task.Description
+		case "status":
+			current[key] = task.Status
+		case "assignee_ids":
+			current[key] = assigneeIDsFromTask(task)
+		case "deadline":
+			current[key] = task.Deadline
+		}
+	}
+
+	return current
+}
+
+func assigneeIDsFromTask(task *domain.Task) []uint {
+	assigneeIDs := normalizeAssigneeIDs(task.AssigneeIDs)
+	if len(assigneeIDs) == 0 && task.AssigneeID != nil {
+		assigneeIDs = []uint{*task.AssigneeID}
+	}
+
+	return assigneeIDs
+}
+
+func changeRequestHasConflict(task *domain.Task, request *domain.TaskChangeRequest) bool {
+	return task != nil &&
+		request != nil &&
+		request.Status == domain.TaskChangeRequestStatusPending &&
+		request.TaskUpdatedAt != nil &&
+		task.UpdatedAt.After(request.TaskUpdatedAt.Add(time.Second))
+}
+
+func (uc *TaskChangeRequestUsecase) recordActivity(
+	ctx context.Context,
+	actorID uint,
+	activityType string,
+	message string,
+	request *domain.TaskChangeRequest,
+	task *domain.Task,
+	payload map[string]interface{},
+) {
+	if uc.activity == nil || request == nil {
+		return
+	}
+
+	taskID := request.TaskID
+	if task != nil {
+		taskID = task.ID
+	}
+	actor := actorID
+	_, _ = uc.activity.Record(ctx, RecordActivityInput{
+		ProjectID: request.ProjectID,
+		TaskID:    &taskID,
+		ActorID:   &actor,
+		Type:      activityType,
+		Message:   message,
+		Payload:   payload,
+	})
+}
+
+func (uc *TaskChangeRequestUsecase) invalidateChangeRequestCaches(ctx context.Context, requestID uint, projectID uint, taskID uint, requesterID uint) {
 	deleteCacheKeys(ctx, uc.cacheService, fmt.Sprintf("change-request:%d:detail", requestID))
 	deleteCachePatterns(ctx, uc.cacheService,
 		fmt.Sprintf("project:%d:change-requests:*", projectID),
+		fmt.Sprintf("task:%d:change-requests:*", taskID),
 		fmt.Sprintf("user:%d:change-requests:*", requesterID),
 	)
 }

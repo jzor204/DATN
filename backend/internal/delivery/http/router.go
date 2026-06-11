@@ -14,6 +14,7 @@ func NewRouter(
 	taskHandler *handler.TaskHandler,
 	commentHandler *handler.CommentHandler,
 	checklistItemHandler *handler.ChecklistItemHandler,
+	activityHandler *handler.ActivityHandler,
 	notificationHandler *handler.NotificationHandler,
 	changeRequestHandler *handler.ChangeRequestHandler,
 	wsHandler *handler.WebSocketHandler,
@@ -63,6 +64,8 @@ func NewRouter(
 	tasks.Get("/me", taskHandler.ListMine)
 	tasks.Get("/:id/comments", commentHandler.ListByTask)
 	tasks.Post("/:id/comments", commentHandler.Create)
+	tasks.Get("/:id/activities", activityHandler.ListByTask)
+	tasks.Get("/:id/change-requests", changeRequestHandler.ListByTask)
 	tasks.Post("/:id/change-requests", changeRequestHandler.CreateForTask)
 	tasks.Get("/:id/checklist", checklistItemHandler.ListByTask)
 	tasks.Post("/:id/checklist", checklistItemHandler.CreateChecklist)
@@ -79,11 +82,14 @@ func NewRouter(
 
 	notifications := api.Group("/notifications", authMiddleware)
 	notifications.Get("/", notificationHandler.List)
+	notifications.Put("/read-all", notificationHandler.MarkAllRead)
 	notifications.Put("/:id/read", notificationHandler.MarkRead)
 
 	changeRequests := api.Group("/change-requests", authMiddleware)
+	changeRequests.Get("/:id", changeRequestHandler.GetByID)
 	changeRequests.Post("/:id/approve", changeRequestHandler.Approve)
 	changeRequests.Post("/:id/reject", changeRequestHandler.Reject)
+	changeRequests.Post("/:id/cancel", changeRequestHandler.Cancel)
 
 	taskAssignees := api.Group("/task-assignees", authMiddleware)
 	taskAssignees.Get("/tasks/:id", taskHandler.ListAssignees)

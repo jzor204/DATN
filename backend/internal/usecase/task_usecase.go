@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ type TaskUsecase struct {
 	userRepo      interfaces.UserRepository
 	accessService *AccessService
 	cacheService  interfaces.CacheService
+	activity      *ActivityUsecase
 }
 
 type CreateTaskInput struct {
@@ -90,6 +92,10 @@ func NewTaskUsecase(
 	}
 }
 
+func (uc *TaskUsecase) SetActivityUsecase(activity *ActivityUsecase) {
+	uc.activity = activity
+}
+
 func (uc *TaskUsecase) Create(
 	ctx context.Context,
 	actorID uint,
@@ -146,6 +152,11 @@ func (uc *TaskUsecase) Create(
 	}
 
 	uc.invalidateTaskCaches(ctx, task.ID, task.ProjectID)
+	uc.recordActivity(ctx, actorID, domain.ActivityTypeTaskCreated, fmt.Sprintf("Đã tạo task \"%s\".", task.Title), task, map[string]interface{}{
+		"title":        task.Title,
+		"assignee_ids": task.AssigneeIDs,
+		"deadline":     task.Deadline,
+	})
 
 	return toTaskOutput(task), nil
 }
@@ -327,6 +338,7 @@ func (uc *TaskUsecase) Update(
 	if task == nil {
 		return nil, errors.New("task not found")
 	}
+	previous := cloneTaskForActivity(task)
 
 	role, err := uc.accessService.GetProjectRole(ctx, task.ProjectID, actorID, globalRole)
 	if err != nil {
@@ -360,6 +372,7 @@ func (uc *TaskUsecase) Update(
 		}
 
 		uc.invalidateTaskCaches(ctx, task.ID, task.ProjectID)
+		uc.recordActivity(ctx, actorID, domain.ActivityTypeTaskUpdated, "Đã cập nhật trạng thái công việc.", task, taskChangePayload(&previous, task))
 
 		return toTaskOutput(task), nil
 	}
@@ -414,6 +427,7 @@ func (uc *TaskUsecase) Update(
 	}
 
 	uc.invalidateTaskCaches(ctx, task.ID, task.ProjectID)
+	uc.recordActivity(ctx, actorID, domain.ActivityTypeTaskUpdated, "Đã cập nhật công việc.", task, taskChangePayload(&previous, task))
 
 	return toTaskOutput(task), nil
 }
@@ -436,6 +450,10 @@ func (uc *TaskUsecase) Delete(
 		return err
 	}
 
+	uc.recordActivity(ctx, actorID, domain.ActivityTypeTaskDeleted, fmt.Sprintf("Đã xóa task \"%s\".", task.Title), task, map[string]interface{}{
+		"title": task.Title,
+	})
+
 	if err := uc.taskRepo.Delete(ctx, taskID); err != nil {
 		return err
 	}
@@ -449,9 +467,80 @@ func (uc *TaskUsecase) invalidateTaskCaches(ctx context.Context, taskID uint, pr
 	deleteCachePatterns(ctx, uc.cacheService,
 		fmt.Sprintf("task:%d:comments:*", taskID),
 		fmt.Sprintf("task:%d:checklists", taskID),
+		fmt.Sprintf("task:%d:activities:*", taskID),
 		fmt.Sprintf("project:%d:tasks:*", projectID),
 		"user:*:tasks:*",
 	)
+}
+
+func (uc *TaskUsecase) recordActivity(
+	ctx context.Context,
+	actorID uint,
+	activityType string,
+	message string,
+	task *domain.Task,
+	payload map[string]interface{},
+) {
+	if uc.activity == nil || task == nil {
+		return
+	}
+
+	taskID := task.ID
+	actor := actorID
+	_, _ = uc.activity.Record(ctx, RecordActivityInput{
+		ProjectID: task.ProjectID,
+		TaskID:    &taskID,
+		ActorID:   &actor,
+		Type:      activityType,
+		Message:   message,
+		Payload:   payload,
+	})
+}
+
+func cloneTaskForActivity(task *domain.Task) domain.Task {
+	clone := *task
+	clone.AssigneeIDs = append([]uint{}, task.AssigneeIDs...)
+	return clone
+}
+
+func taskChangePayload(previous *domain.Task, current *domain.Task) map[string]interface{} {
+	payload := map[string]interface{}{}
+	if previous == nil || current == nil {
+		return payload
+	}
+
+	if previous.Title != current.Title {
+		payload["title"] = map[string]interface{}{
+			"from": previous.Title,
+			"to":   current.Title,
+		}
+	}
+	if previous.Description != current.Description {
+		payload["description"] = map[string]interface{}{
+			"from": previous.Description,
+			"to":   current.Description,
+		}
+	}
+	if previous.Status != current.Status {
+		payload["status"] = map[string]interface{}{
+			"from": previous.Status,
+			"to":   current.Status,
+		}
+	}
+	if !reflect.DeepEqual(normalizeAssigneeIDs(previous.AssigneeIDs), normalizeAssigneeIDs(current.AssigneeIDs)) {
+		payload["assignee_ids"] = map[string]interface{}{
+			"from": normalizeAssigneeIDs(previous.AssigneeIDs),
+			"to":   normalizeAssigneeIDs(current.AssigneeIDs),
+		}
+	}
+	if !sameTimePointer(previous.Deadline, current.Deadline) {
+		payload["deadline"] = map[string]interface{}{
+			"from": previous.Deadline,
+			"to":   current.Deadline,
+		}
+	}
+
+	return payload
 }
 
 func toTaskOutput(task *domain.Task) *TaskOutput {

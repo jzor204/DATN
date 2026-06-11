@@ -7,12 +7,20 @@ import {
   listChecklistsByTask,
   updateChecklistItem
 } from "../api/checklistApi";
+import { listActivitiesByTask } from "../api/activityApi";
 import { createComment, deleteComment, listCommentsByTask, updateComment } from "../api/commentApi";
-import { createTaskChangeRequest } from "../api/changeRequestApi";
+import {
+  approveChangeRequest,
+  cancelChangeRequest,
+  createTaskChangeRequest,
+  listTaskChangeRequests,
+  rejectChangeRequest
+} from "../api/changeRequestApi";
 import { getTask, getTaskAssignees, updateTask } from "../api/taskApi";
 import {
   formatDate,
   formatDeadline,
+  formatTaskStatus,
   normalizeTaskProgress,
   toDeadlineInputValue,
   toDeadlinePayload,
@@ -174,6 +182,63 @@ function ChecklistSummary({ checklists, progress }) {
   );
 }
 
+function getChangeRequestStatusLabel(status) {
+  if (status === "approved") {
+    return "Đã duyệt";
+  }
+  if (status === "rejected") {
+    return "Đã từ chối";
+  }
+  if (status === "cancelled") {
+    return "Đã hủy";
+  }
+  return "Chờ duyệt";
+}
+
+function getChangeRequestStatusTone(status) {
+  if (status === "approved") {
+    return "bg-emerald-50 text-emerald-700";
+  }
+  if (status === "rejected") {
+    return "bg-red-50 text-red-700";
+  }
+  if (status === "cancelled") {
+    return "bg-slate-100 text-slate-600";
+  }
+  return "bg-amber-50 text-amber-700";
+}
+
+function formatChangeRequestValue(key, value, members) {
+  if (value === null || value === undefined || value === "") {
+    return "Trống";
+  }
+
+  if (key === "deadline") {
+    return formatDeadline(value);
+  }
+  if (key === "status") {
+    return formatTaskStatus(value);
+  }
+  if (key === "assignee_ids") {
+    const ids = Array.isArray(value) ? value : [];
+    return ids.length > 0 ? ids.map((id) => getMemberName(members, id)).join(", ") : "Chưa gán";
+  }
+
+  return String(value);
+}
+
+function getChangeRequestFieldLabel(key) {
+  const labels = {
+    title: "Tiêu đề",
+    description: "Mô tả",
+    status: "Trạng thái",
+    assignee_ids: "Người phụ trách",
+    deadline: "Deadline"
+  };
+
+  return labels[key] || key;
+}
+
 function Toast({ toast, onClose }) {
   if (!toast.message) {
     return null;
@@ -285,12 +350,15 @@ export default function TaskModal({
   const [taskForm, setTaskForm] = useState(initialTaskForm);
   const [checklists, setChecklists] = useState([]);
   const [comments, setComments] = useState([]);
+  const [activities, setActivities] = useState([]);
+  const [changeRequests, setChangeRequests] = useState([]);
   const [showChecklistComposer, setShowChecklistComposer] = useState(false);
   const [newChecklistTitle, setNewChecklistTitle] = useState(checklistDefaultTitle);
   const [activeItemComposer, setActiveItemComposer] = useState(null);
   const [newItemTitles, setNewItemTitles] = useState({});
   const [newComment, setNewComment] = useState("");
   const [commentComposerOpen, setCommentComposerOpen] = useState(false);
+  const [showActivityLog, setShowActivityLog] = useState(false);
   const [editingCommentId, setEditingCommentId] = useState(null);
   const [editingCommentContent, setEditingCommentContent] = useState("");
   const [memberPickerOpen, setMemberPickerOpen] = useState(false);
@@ -306,6 +374,7 @@ export default function TaskModal({
   const [savingChecklist, setSavingChecklist] = useState(false);
   const [savingComment, setSavingComment] = useState(false);
   const [sendingChangeRequest, setSendingChangeRequest] = useState(false);
+  const [reviewingChangeRequestId, setReviewingChangeRequestId] = useState("");
 
   const currentProjectMember = useMemo(
     () => members.find((member) => member.user_id === currentUser.id),
@@ -327,6 +396,14 @@ export default function TaskModal({
   const totalChecklistItems = useMemo(() => getAllChecklistItems(checklists), [checklists]);
   const doneChecklistItems = totalChecklistItems.filter((item) => item.is_done).length;
   const assigneeIds = useMemo(() => getTaskAssigneeIds(task), [task]);
+  const pendingChangeRequests = useMemo(
+    () => changeRequests.filter((request) => request.status === "pending"),
+    [changeRequests]
+  );
+  const myPendingChangeRequest = useMemo(
+    () => pendingChangeRequests.find((request) => Number(request.requested_by) === Number(currentUser.id)),
+    [currentUser.id, pendingChangeRequests]
+  );
   const canMutateComments =
     currentUser.role === "admin" ||
     currentProjectMember?.role_in_project === "owner" ||
@@ -358,10 +435,12 @@ export default function TaskModal({
       });
       setChangeRequestForm(buildChangeRequestForm(taskPayload));
 
-      const [assigneeResult, checklistResult, commentResult] = await Promise.allSettled([
+      const [assigneeResult, checklistResult, commentResult, activityResult, changeRequestResult] = await Promise.allSettled([
         getTaskAssignees(taskId),
         listChecklistsByTask(taskId),
-        listCommentsByTask(taskId, 1, 20)
+        listCommentsByTask(taskId, 1, 20),
+        listActivitiesByTask(taskId, 1, 30),
+        listTaskChangeRequests(taskId, 1, 20)
       ]);
 
       if (assigneeResult.status === "fulfilled") {
@@ -386,6 +465,22 @@ export default function TaskModal({
       } else {
         setComments([]);
         showToast(commentResult.reason?.message || "Không thể tải bình luận.", "error");
+      }
+
+      if (activityResult.status === "fulfilled") {
+        const activityPayload = activityResult.value;
+        setActivities(Array.isArray(activityPayload) ? activityPayload : activityPayload?.data || []);
+      } else {
+        setActivities([]);
+        showToast(activityResult.reason?.message || "Không thể tải nhật ký hoạt động.", "error");
+      }
+
+      if (changeRequestResult.status === "fulfilled") {
+        const changeRequestPayload = changeRequestResult.value;
+        setChangeRequests(Array.isArray(changeRequestPayload) ? changeRequestPayload : changeRequestPayload?.data || []);
+      } else {
+        setChangeRequests([]);
+        showToast(changeRequestResult.reason?.message || "Không thể tải yêu cầu thay đổi.", "error");
       }
     } catch (err) {
       setMessage(err.message);
@@ -417,7 +512,13 @@ export default function TaskModal({
         return;
       }
 
-      if (!event.type.startsWith("task.") && !event.type.startsWith("comment.")) {
+      if (
+        !event.type.startsWith("task.") &&
+        !event.type.startsWith("comment.") &&
+        !event.type.startsWith("checklist.") &&
+        !event.type.startsWith("activity.") &&
+        !event.type.startsWith("change_request.")
+      ) {
         return;
       }
 
@@ -542,6 +643,11 @@ export default function TaskModal({
   }
 
   function openChangeRequestComposer() {
+    if (myPendingChangeRequest) {
+      showToast("Bạn đã có yêu cầu thay đổi đang chờ duyệt cho công việc này.", "error");
+      return;
+    }
+
     setChangeRequestForm(buildChangeRequestForm(task));
     setChangeRequestOpen(true);
   }
@@ -598,6 +704,11 @@ export default function TaskModal({
     if (!task || !canRequestChange || sendingChangeRequest) {
       return;
     }
+    if (myPendingChangeRequest) {
+      setChangeRequestOpen(false);
+      showToast("Bạn đã có yêu cầu thay đổi đang chờ duyệt cho công việc này.", "error");
+      return;
+    }
 
     const payload = buildChangeRequestPayload();
     const changeKeys = Object.keys(payload).filter((key) => key !== "reason");
@@ -611,11 +722,62 @@ export default function TaskModal({
     try {
       await createTaskChangeRequest(task.id, payload);
       setChangeRequestOpen(false);
+      await loadModal({ silent: true });
       showToast("Đã gửi yêu cầu thay đổi đến owner/admin.", "success");
     } catch (err) {
       showToast(err.message, "error");
     } finally {
       setSendingChangeRequest(false);
+    }
+  }
+
+  async function handleReviewChangeRequest(request, decision) {
+    if (!request || !canManageTask || reviewingChangeRequestId) {
+      return;
+    }
+
+    let reviewNote = "";
+    if (decision === "reject") {
+      const note = window.prompt("Ghi chú từ chối (tùy chọn)");
+      if (note === null) {
+        return;
+      }
+      reviewNote = note.trim();
+    }
+
+    setReviewingChangeRequestId(`${decision}-${request.id}`);
+
+    try {
+      if (decision === "approve") {
+        await approveChangeRequest(request.id);
+        showToast("Đã duyệt yêu cầu thay đổi.", "success");
+      } else {
+        await rejectChangeRequest(request.id, { review_note: reviewNote });
+        showToast("Đã từ chối yêu cầu thay đổi.", "success");
+      }
+      await refreshAfterMutation();
+    } catch (err) {
+      showToast(err.message, "error");
+    } finally {
+      setReviewingChangeRequestId("");
+    }
+  }
+
+  async function handleCancelChangeRequest(request) {
+    if (!request || reviewingChangeRequestId) {
+      return;
+    }
+
+    setReviewingChangeRequestId(`cancel-${request.id}`);
+
+    try {
+      await cancelChangeRequest(request.id);
+      await refreshAfterMutation();
+      showToast("Đã hủy yêu cầu thay đổi.", "success");
+    } catch (err) {
+      showToast(err.message, "error");
+    } finally {
+      setReviewingChangeRequestId("");
     }
   }
 
@@ -917,11 +1079,11 @@ export default function TaskModal({
                 {canRequestChange ? (
                   <button
                     className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 transition hover:border-amber-300 disabled:cursor-not-allowed disabled:opacity-60"
-                    disabled={sendingChangeRequest}
+                    disabled={sendingChangeRequest || Boolean(myPendingChangeRequest)}
                     onClick={openChangeRequestComposer}
                     type="button"
                   >
-                    Yêu cầu thay đổi
+                    {myPendingChangeRequest ? "Đang chờ duyệt" : "Yêu cầu thay đổi"}
                   </button>
                 ) : null}
                 <div className="relative min-w-[220px] flex-1">
@@ -1416,128 +1578,312 @@ export default function TaskModal({
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                       Hoạt động
                     </div>
-                    <h3 className="text-base font-semibold text-ink">Bình luận</h3>
+                    <h3 className="text-base font-semibold text-ink">
+                      {showActivityLog ? "Chi tiết" : "Bình luận"}
+                    </h3>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-600">
+                      {showActivityLog ? changeRequests.length + activities.length : comments.length}
+                    </span>
+                    <button
+                      className="rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-400 hover:text-slate-900"
+                      onClick={() => setShowActivityLog((prev) => !prev)}
+                      type="button"
+                    >
+                      {showActivityLog ? "Ẩn chi tiết" : "Hiện chi tiết"}
+                    </button>
+                  </div>
+                </div>
+
+                {!showActivityLog ? (
+                  <>
+                    <form className="space-y-2" onSubmit={handleCreateComment}>
+                      <textarea
+                        className={`w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 ${
+                          commentComposerOpen ? "min-h-20" : "min-h-10"
+                        }`}
+                        onChange={(event) => setNewComment(event.target.value)}
+                        onFocus={() => setCommentComposerOpen(true)}
+                        placeholder="Viết bình luận..."
+                        value={newComment}
+                      />
+                      {commentComposerOpen ? (
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            className="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+                            disabled={savingComment || !newComment.trim()}
+                            type="submit"
+                          >
+                            Gửi
+                          </button>
+                          <button
+                            className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
+                            onClick={() => {
+                              setCommentComposerOpen(false);
+                              setNewComment("");
+                            }}
+                            type="button"
+                          >
+                            Hủy
+                          </button>
+                        </div>
+                      ) : null}
+                    </form>
+
+                    <div className="mt-4 space-y-3">
+                      {comments.length === 0 ? (
+                        <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm text-slate-500">
+                          Chưa có bình luận.
+                        </div>
+                      ) : null}
+
+                      {comments.map((comment) => {
+                        const authorMember = getMemberById(members, comment.author_id);
+                        const isEditing = editingCommentId === comment.id;
+
+                        return (
+                          <article className="flex gap-3 rounded-lg border border-slate-200 bg-white px-3 py-3" key={comment.id}>
+                            <Avatar member={authorMember} size="sm" userId={comment.author_id} />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center justify-between gap-3 text-xs text-slate-500">
+                                <span className="truncate font-semibold text-slate-700">
+                                  {authorMember?.name || `User #${comment.author_id}`}
+                                </span>
+                                <span className="shrink-0">{formatDate(comment.updated_at || comment.created_at)}</span>
+                              </div>
+
+                              {isEditing ? (
+                                <form className="mt-2 space-y-2" onSubmit={handleUpdateComment}>
+                                  <textarea
+                                    autoFocus
+                                    className="min-h-20 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm leading-6 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                                    disabled={savingComment}
+                                    onChange={(event) => setEditingCommentContent(event.target.value)}
+                                    value={editingCommentContent}
+                                  />
+                                  <div className="flex flex-wrap gap-2">
+                                    <button
+                                      className="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+                                      disabled={savingComment || !editingCommentContent.trim()}
+                                      type="submit"
+                                    >
+                                      Lưu
+                                    </button>
+                                    <button
+                                      className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
+                                      onClick={() => {
+                                        setEditingCommentId(null);
+                                        setEditingCommentContent("");
+                                      }}
+                                      type="button"
+                                    >
+                                      Hủy
+                                    </button>
+                                  </div>
+                                </form>
+                              ) : (
+                                <>
+                                  <p className="mt-2 break-words rounded-md bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-700">
+                                    {comment.content}
+                                  </p>
+                                  {canEditComment(comment) ? (
+                                    <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                                      <button
+                                        className="font-semibold text-slate-500 transition hover:text-blue-700"
+                                        onClick={() => startEditComment(comment)}
+                                        type="button"
+                                      >
+                                        Chỉnh sửa
+                                      </button>
+                                      <button
+                                        className="font-semibold text-slate-500 transition hover:text-red-700"
+                                        onClick={() => handleDeleteComment(comment.id)}
+                                        type="button"
+                                      >
+                                        Xóa
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                </>
+                              )}
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : null}
+              </section>
+
+              {showActivityLog ? (
+              <section className="mt-6 border-t border-slate-200 pt-5">
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Quy trình
+                    </div>
+                    <h3 className="text-base font-semibold text-ink">Yêu cầu thay đổi</h3>
                   </div>
                   <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-600">
-                    {comments.length}
+                    {pendingChangeRequests.length}/{changeRequests.length}
                   </span>
                 </div>
 
-                <form className="space-y-2" onSubmit={handleCreateComment}>
-                  <textarea
-                    className={`w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 ${
-                      commentComposerOpen ? "min-h-20" : "min-h-10"
-                    }`}
-                    onChange={(event) => setNewComment(event.target.value)}
-                    onFocus={() => setCommentComposerOpen(true)}
-                    placeholder="Viết bình luận..."
-                    value={newComment}
-                  />
-                  {commentComposerOpen ? (
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        className="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-400"
-                        disabled={savingComment || !newComment.trim()}
-                        type="submit"
-                      >
-                        Gửi
-                      </button>
-                      <button
-                        className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
-                        onClick={() => {
-                          setCommentComposerOpen(false);
-                          setNewComment("");
-                        }}
-                        type="button"
-                      >
-                        Hủy
-                      </button>
-                    </div>
-                  ) : null}
-                </form>
-
-                <div className="mt-4 space-y-3">
-                  {comments.length === 0 ? (
+                <div className="space-y-3">
+                  {changeRequests.length === 0 ? (
                     <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm text-slate-500">
-                      Chưa có bình luận.
+                      Chưa có yêu cầu thay đổi.
                     </div>
                   ) : null}
 
-                  {comments.map((comment) => {
-                    const authorMember = getMemberById(members, comment.author_id);
-                    const isEditing = editingCommentId === comment.id;
+                  {changeRequests.map((request) => {
+                    const requesterMember = getMemberById(members, request.requested_by);
+                    const requesterName = request.requester?.name || requesterMember?.name || `User #${request.requested_by}`;
+                    const payload = request.payload || {};
+                    const currentValues = request.current_values || {};
+                    const changedFields = Object.keys(payload);
+                    const isPending = request.status === "pending";
+                    const isMine = Number(request.requested_by) === Number(currentUser.id);
+                    const canReviewRequest = canManageTask && isPending;
+                    const canCancelRequest = isPending && (isMine || canManageTask);
 
                     return (
-                      <article className="flex gap-3 rounded-lg border border-slate-200 bg-white px-3 py-3" key={comment.id}>
-                        <Avatar member={authorMember} size="sm" userId={comment.author_id} />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-3 text-xs text-slate-500">
-                            <span className="truncate font-semibold text-slate-700">
-                              {authorMember?.name || `User #${comment.author_id}`}
-                            </span>
-                            <span className="shrink-0">{formatDate(comment.updated_at || comment.created_at)}</span>
+                      <article className="rounded-lg border border-slate-200 bg-white px-3 py-3" key={request.id}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <Avatar member={requesterMember || request.requester} size="sm" userId={request.requested_by} />
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-semibold text-slate-700">{requesterName}</div>
+                              <div className="text-xs text-slate-500">{formatDate(request.created_at)}</div>
+                            </div>
                           </div>
+                          <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-semibold ${getChangeRequestStatusTone(request.status)}`}>
+                            {getChangeRequestStatusLabel(request.status)}
+                          </span>
+                        </div>
 
-                          {isEditing ? (
-                            <form className="mt-2 space-y-2" onSubmit={handleUpdateComment}>
-                              <textarea
-                                autoFocus
-                                className="min-h-20 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm leading-6 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                                disabled={savingComment}
-                                onChange={(event) => setEditingCommentContent(event.target.value)}
-                                value={editingCommentContent}
-                              />
-                              <div className="flex flex-wrap gap-2">
+                        {request.conflict ? (
+                          <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs font-semibold text-amber-800">
+                            Task đã thay đổi sau khi request này được gửi. Cần kiểm tra lại trước khi duyệt.
+                          </div>
+                        ) : null}
+
+                        {request.reason ? (
+                          <p className="mt-3 rounded-md bg-slate-50 px-2.5 py-2 text-xs leading-5 text-slate-600">
+                            Lý do: {request.reason}
+                          </p>
+                        ) : null}
+
+                        <div className="mt-3 space-y-2">
+                          {changedFields.map((field) => (
+                            <div className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2" key={field}>
+                              <div className="text-xs font-semibold text-slate-500">{getChangeRequestFieldLabel(field)}</div>
+                              <div className="mt-1 grid gap-1 text-xs sm:grid-cols-2">
+                                <div className="min-w-0">
+                                  <span className="block text-slate-400">Hiện tại</span>
+                                  <span className="block truncate font-semibold text-slate-700">
+                                    {formatChangeRequestValue(field, currentValues[field], members)}
+                                  </span>
+                                </div>
+                                <div className="min-w-0">
+                                  <span className="block text-slate-400">Đề xuất</span>
+                                  <span className="block truncate font-semibold text-blue-700">
+                                    {formatChangeRequestValue(field, payload[field], members)}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {request.review_note ? (
+                          <p className="mt-3 rounded-md bg-slate-50 px-2.5 py-2 text-xs leading-5 text-slate-600">
+                            Ghi chú xử lý: {request.review_note}
+                          </p>
+                        ) : null}
+
+                        {canReviewRequest || canCancelRequest ? (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {canReviewRequest ? (
+                              <>
                                 <button
-                                  className="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-400"
-                                  disabled={savingComment || !editingCommentContent.trim()}
-                                  type="submit"
-                                >
-                                  Lưu
-                                </button>
-                                <button
-                                  className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
-                                  onClick={() => {
-                                    setEditingCommentId(null);
-                                    setEditingCommentContent("");
-                                  }}
+                                  className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+                                  disabled={Boolean(reviewingChangeRequestId) || request.conflict}
+                                  onClick={() => handleReviewChangeRequest(request, "approve")}
                                   type="button"
                                 >
-                                  Hủy
+                                  {reviewingChangeRequestId === `approve-${request.id}` ? "Đang duyệt..." : "Duyệt"}
                                 </button>
-                              </div>
-                            </form>
-                          ) : (
-                            <>
-                              <p className="mt-2 break-words rounded-md bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-700">
-                                {comment.content}
-                              </p>
-                              {canEditComment(comment) ? (
-                                <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                                  <button
-                                    className="font-semibold text-slate-500 transition hover:text-blue-700"
-                                    onClick={() => startEditComment(comment)}
-                                    type="button"
-                                  >
-                                    Chỉnh sửa
-                                  </button>
-                                  <button
-                                    className="font-semibold text-slate-500 transition hover:text-red-700"
-                                    onClick={() => handleDeleteComment(comment.id)}
-                                    type="button"
-                                  >
-                                    Xóa
-                                  </button>
-                                </div>
-                              ) : null}
-                            </>
-                          )}
-                        </div>
+                                <button
+                                  className="rounded-md border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:border-red-300 disabled:opacity-60"
+                                  disabled={Boolean(reviewingChangeRequestId)}
+                                  onClick={() => handleReviewChangeRequest(request, "reject")}
+                                  type="button"
+                                >
+                                  {reviewingChangeRequestId === `reject-${request.id}` ? "Đang từ chối..." : "Từ chối"}
+                                </button>
+                              </>
+                            ) : null}
+                            {canCancelRequest ? (
+                              <button
+                                className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-red-200 hover:text-red-700 disabled:opacity-60"
+                                disabled={Boolean(reviewingChangeRequestId)}
+                                onClick={() => handleCancelChangeRequest(request)}
+                                type="button"
+                              >
+                                {reviewingChangeRequestId === `cancel-${request.id}` ? "Đang hủy..." : "Hủy"}
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </article>
                     );
                   })}
                 </div>
               </section>
+              ) : null}
+
+              {showActivityLog ? (
+                <section className="mt-6 border-t border-slate-200 pt-5">
+                  <div className="mb-3 flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Nhật ký
+                      </div>
+                      <h3 className="text-base font-semibold text-ink">Hoạt động</h3>
+                    </div>
+                    <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-600">
+                      {activities.length}
+                    </span>
+                  </div>
+
+                  <div className="space-y-3">
+                    {activities.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm text-slate-500">
+                        Chưa có hoạt động.
+                      </div>
+                    ) : null}
+
+                    {activities.map((activity) => {
+                      const actorName = activity.actor?.name || (activity.actor_id ? `User #${activity.actor_id}` : "Hệ thống");
+
+                      return (
+                        <article className="flex gap-3 rounded-lg border border-slate-200 bg-white px-3 py-3" key={activity.id}>
+                          <Avatar member={activity.actor} size="sm" userId={activity.actor?.id || activity.actor_id} />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-3 text-xs text-slate-500">
+                              <span className="truncate font-semibold text-slate-700">{actorName}</span>
+                              <span className="shrink-0">{formatDate(activity.created_at)}</span>
+                            </div>
+                            <p className="mt-1 text-sm leading-5 text-slate-600">{activity.message}</p>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </section>
+              ) : null}
             </aside>
           </div>
         ) : null}

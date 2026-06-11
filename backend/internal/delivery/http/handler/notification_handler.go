@@ -57,3 +57,16 @@ func (h *NotificationHandler) MarkRead(c *fiber.Ctx) error {
 
 	return utils.Success(c, fiber.StatusOK, "mark notification read success", nil)
 }
+
+func (h *NotificationHandler) MarkAllRead(c *fiber.Ctx) error {
+	userID, _, err := getAuthContext(c)
+	if err != nil {
+		return utils.Error(c, fiber.StatusUnauthorized, "unauthorized", err.Error())
+	}
+
+	if err := h.notificationUsecase.MarkAllRead(c.UserContext(), userID); err != nil {
+		return utils.Error(c, projectErrorStatus(err), "mark all notifications read failed", err.Error())
+	}
+
+	return utils.Success(c, fiber.StatusOK, "mark all notifications read success", nil)
+}

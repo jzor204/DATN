@@ -16,6 +16,7 @@ type CommentUsecase struct {
 	taskRepo      interfaces.TaskRepository
 	accessService *AccessService
 	cacheService  interfaces.CacheService
+	activity      *ActivityUsecase
 }
 
 type CreateCommentInput struct {
@@ -52,6 +53,10 @@ func NewCommentUsecase(
 		accessService: accessService,
 		cacheService:  cacheService,
 	}
+}
+
+func (uc *CommentUsecase) SetActivityUsecase(activity *ActivityUsecase) {
+	uc.activity = activity
 }
 
 func (uc *CommentUsecase) GetByID(
@@ -193,6 +198,9 @@ func (uc *CommentUsecase) Create(
 	}
 
 	uc.invalidateCommentCaches(ctx, comment.ID, taskID)
+	uc.recordActivity(ctx, actorID, domain.ActivityTypeCommentCreated, "Đã thêm bình luận.", task, map[string]interface{}{
+		"comment_id": comment.ID,
+	})
 
 	return toCommentOutput(comment), nil
 }
@@ -245,6 +253,9 @@ func (uc *CommentUsecase) Update(
 	}
 
 	uc.invalidateCommentCaches(ctx, comment.ID, comment.TaskID)
+	uc.recordActivity(ctx, actorID, domain.ActivityTypeCommentUpdated, "Đã chỉnh sửa bình luận.", task, map[string]interface{}{
+		"comment_id": comment.ID,
+	})
 
 	return toCommentOutput(comment), nil
 }
@@ -289,12 +300,39 @@ func (uc *CommentUsecase) Delete(
 	}
 
 	uc.invalidateCommentCaches(ctx, commentID, comment.TaskID)
+	uc.recordActivity(ctx, actorID, domain.ActivityTypeCommentDeleted, "Đã xóa bình luận.", task, map[string]interface{}{
+		"comment_id": commentID,
+	})
 	return nil
 }
 
 func (uc *CommentUsecase) invalidateCommentCaches(ctx context.Context, commentID uint, taskID uint) {
 	deleteCacheKeys(ctx, uc.cacheService, fmt.Sprintf("comment:%d:detail", commentID))
 	deleteCachePatterns(ctx, uc.cacheService, fmt.Sprintf("task:%d:comments:*", taskID))
+}
+
+func (uc *CommentUsecase) recordActivity(
+	ctx context.Context,
+	actorID uint,
+	activityType string,
+	message string,
+	task *domain.Task,
+	payload map[string]interface{},
+) {
+	if uc.activity == nil || task == nil {
+		return
+	}
+
+	taskID := task.ID
+	actor := actorID
+	_, _ = uc.activity.Record(ctx, RecordActivityInput{
+		ProjectID: task.ProjectID,
+		TaskID:    &taskID,
+		ActorID:   &actor,
+		Type:      activityType,
+		Message:   message,
+		Payload:   payload,
+	})
 }
 
 func toCommentOutput(comment *domain.Comment) *CommentOutput {

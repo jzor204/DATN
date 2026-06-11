@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { approveChangeRequest, rejectChangeRequest } from "../api/changeRequestApi";
-import { listNotifications, markNotificationRead } from "../api/notificationApi";
+import { approveChangeRequest, cancelChangeRequest, rejectChangeRequest } from "../api/changeRequestApi";
+import { listNotifications, markAllNotificationsRead, markNotificationRead } from "../api/notificationApi";
 import { listProjectMembers, listProjects } from "../api/projectApi";
 import { listTasksByProject } from "../api/taskApi";
 import { navigateTo } from "../utils/router";
@@ -348,15 +348,32 @@ function summarizeRequestedChanges(payload = {}) {
     .join(" · ");
 }
 
+function getChangeRequestStatusLabel(status) {
+  if (status === "approved") {
+    return "Đã duyệt";
+  }
+  if (status === "rejected") {
+    return "Đã từ chối";
+  }
+  if (status === "cancelled") {
+    return "Đã hủy";
+  }
+  return "Đang chờ duyệt";
+}
+
 function NotificationCenter({ currentUser }) {
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
+  const [notificationFilter, setNotificationFilter] = useState("all");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [actionId, setActionId] = useState("");
   const rootRef = useRef(null);
 
   const unreadCount = notifications.filter((notification) => !notification.read_at).length;
+  const visibleNotifications = notifications.filter((notification) =>
+    notificationFilter === "unread" ? !notification.read_at : true
+  );
 
   async function loadNotifications({ silent = false } = {}) {
     if (!currentUser?.id) {
@@ -423,6 +440,15 @@ function NotificationCenter({ currentUser }) {
       return;
     }
 
+    let reviewNote = "";
+    if (decision === "reject") {
+      const note = window.prompt("Ghi chú từ chối (tùy chọn)");
+      if (note === null) {
+        return;
+      }
+      reviewNote = note.trim();
+    }
+
     setActionId(`${decision}-${notification.id}`);
     setError("");
 
@@ -430,12 +456,46 @@ function NotificationCenter({ currentUser }) {
       if (decision === "approve") {
         await approveChangeRequest(requestId);
       } else {
-        await rejectChangeRequest(requestId);
+        await rejectChangeRequest(requestId, { review_note: reviewNote });
       }
       await markNotificationRead(notification.id).catch(() => null);
       await loadNotifications({ silent: true });
     } catch (err) {
       setError(err.message || "Không thể xử lý yêu cầu.");
+    } finally {
+      setActionId("");
+    }
+  }
+
+  async function handleCancelRequest(notification) {
+    const requestId = notification.payload?.change_request_id;
+    if (!requestId) {
+      return;
+    }
+
+    setActionId(`cancel-${notification.id}`);
+    setError("");
+
+    try {
+      await cancelChangeRequest(requestId);
+      await markNotificationRead(notification.id).catch(() => null);
+      await loadNotifications({ silent: true });
+    } catch (err) {
+      setError(err.message || "Không thể hủy yêu cầu.");
+    } finally {
+      setActionId("");
+    }
+  }
+
+  async function handleMarkAllRead() {
+    setActionId("read-all");
+    setError("");
+
+    try {
+      await markAllNotificationsRead();
+      await loadNotifications({ silent: true });
+    } catch (err) {
+      setError(err.message || "Không thể đánh dấu đã đọc.");
     } finally {
       setActionId("");
     }
@@ -474,23 +534,58 @@ function NotificationCenter({ currentUser }) {
 
           {error ? <div className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700">{error}</div> : null}
 
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-2">
+            <div className="flex rounded-md border border-slate-200 bg-slate-50 p-0.5">
+              {[
+                ["all", "Tất cả"],
+                ["unread", "Chưa đọc"]
+              ].map(([value, label]) => (
+                <button
+                  className={`rounded px-2.5 py-1 text-xs font-semibold transition ${
+                    notificationFilter === value ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"
+                  }`}
+                  key={value}
+                  onClick={() => setNotificationFilter(value)}
+                  type="button"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <button
+              className="rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-400 disabled:opacity-50"
+              disabled={unreadCount === 0 || actionId === "read-all"}
+              onClick={handleMarkAllRead}
+              type="button"
+            >
+              {actionId === "read-all" ? "Đang lưu..." : "Đọc tất cả"}
+            </button>
+          </div>
+
           <div className="max-h-[520px] overflow-y-auto p-3">
             {loading ? <div className="px-2 py-6 text-center text-sm text-slate-500">Đang tải thông báo...</div> : null}
 
-            {!loading && notifications.length === 0 ? (
+            {!loading && visibleNotifications.length === 0 ? (
               <div className="rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500">
-                Chưa có thông báo.
+                {notificationFilter === "unread" ? "Không có thông báo chưa đọc." : "Chưa có thông báo."}
               </div>
             ) : null}
 
             <div className="space-y-2">
-              {notifications.map((notification) => {
+              {visibleNotifications.map((notification) => {
                 const payload = notification.payload || {};
                 const requestStatus = payload.change_request_status;
+                const isRequester = Number(payload.requester_id) === Number(currentUser.id);
                 const canReview =
                   notification.type === "task_change_request" &&
                   payload.change_request_id &&
-                  requestStatus === "pending";
+                  requestStatus === "pending" &&
+                  !isRequester;
+                const canCancel =
+                  notification.type === "task_change_request" &&
+                  payload.change_request_id &&
+                  requestStatus === "pending" &&
+                  isRequester;
 
                 return (
                   <article
@@ -516,32 +611,49 @@ function NotificationCenter({ currentUser }) {
                         <div className="mt-2 rounded-md bg-white px-2.5 py-2 text-xs text-slate-600">
                           {summarizeRequestedChanges(payload) || "Có thay đổi được đề xuất."}
                           {payload.reason ? <div className="mt-1 text-slate-500">Lý do: {payload.reason}</div> : null}
+                          {payload.review_note ? (
+                            <div className="mt-1 text-slate-500">Ghi chú xử lý: {payload.review_note}</div>
+                          ) : null}
                         </div>
                       ) : null}
                     </button>
 
-                    {canReview ? (
+                    {canReview || canCancel ? (
                       <div className="mt-3 flex flex-wrap gap-2">
-                        <button
-                          className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:bg-slate-400"
-                          disabled={Boolean(actionId)}
-                          onClick={() => handleReview(notification, "approve")}
-                          type="button"
-                        >
-                          {actionId === `approve-${notification.id}` ? "Đang duyệt..." : "Duyệt"}
-                        </button>
-                        <button
-                          className="rounded-md border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:border-red-300 disabled:opacity-60"
-                          disabled={Boolean(actionId)}
-                          onClick={() => handleReview(notification, "reject")}
-                          type="button"
-                        >
-                          {actionId === `reject-${notification.id}` ? "Đang từ chối..." : "Từ chối"}
-                        </button>
+                        {canReview ? (
+                          <>
+                            <button
+                              className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:bg-slate-400"
+                              disabled={Boolean(actionId)}
+                              onClick={() => handleReview(notification, "approve")}
+                              type="button"
+                            >
+                              {actionId === `approve-${notification.id}` ? "Đang duyệt..." : "Duyệt"}
+                            </button>
+                            <button
+                              className="rounded-md border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:border-red-300 disabled:opacity-60"
+                              disabled={Boolean(actionId)}
+                              onClick={() => handleReview(notification, "reject")}
+                              type="button"
+                            >
+                              {actionId === `reject-${notification.id}` ? "Đang từ chối..." : "Từ chối"}
+                            </button>
+                          </>
+                        ) : null}
+                        {canCancel ? (
+                          <button
+                            className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-red-200 hover:text-red-700 disabled:opacity-60"
+                            disabled={Boolean(actionId)}
+                            onClick={() => handleCancelRequest(notification)}
+                            type="button"
+                          >
+                            {actionId === `cancel-${notification.id}` ? "Đang hủy..." : "Hủy yêu cầu"}
+                          </button>
+                        ) : null}
                       </div>
                     ) : requestStatus ? (
                       <div className="mt-3 inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
-                        {requestStatus === "approved" ? "Đã duyệt" : requestStatus === "rejected" ? "Đã từ chối" : "Đang chờ duyệt"}
+                        {getChangeRequestStatusLabel(requestStatus)}
                       </div>
                     ) : null}
                   </article>

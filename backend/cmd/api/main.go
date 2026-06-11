@@ -55,6 +55,7 @@ func main() {
 	commentRepo := repository.NewCommentRepository(db)
 	checklistRepo := repository.NewChecklistRepository(db)
 	checklistItemRepo := repository.NewChecklistItemRepository(db)
+	activityRepo := repository.NewActivityRepository(db)
 	changeRequestRepo := repository.NewTaskChangeRequestRepository(db)
 	notificationRepo := repository.NewNotificationRepository(db)
 
@@ -100,6 +101,14 @@ func main() {
 		cacheService,
 	)
 
+	activityUsecase := usecase.NewActivityUsecase(
+		activityRepo,
+		taskRepo,
+		userRepo,
+		accessService,
+		cacheService,
+	)
+
 	notificationUsecase := usecase.NewNotificationUsecase(
 		notificationRepo,
 		changeRequestRepo,
@@ -116,12 +125,17 @@ func main() {
 		accessService,
 		cacheService,
 	)
+	taskUsecase.SetActivityUsecase(activityUsecase)
+	commentUsecase.SetActivityUsecase(activityUsecase)
+	checklistItemUsecase.SetActivityUsecase(activityUsecase)
+	changeRequestUsecase.SetActivityUsecase(activityUsecase)
 
 	authHandler := handler.NewAuthHandler(authUsecase)
 	projectHandler := handler.NewProjectHandler(projectUsecase, realtimeHub)
 	taskHandler := handler.NewTaskHandler(taskUsecase, projectUsecase, realtimeHub)
 	commentHandler := handler.NewCommentHandler(commentUsecase, taskUsecase, realtimeHub)
 	checklistItemHandler := handler.NewChecklistItemHandler(checklistItemUsecase, taskUsecase, realtimeHub)
+	activityHandler := handler.NewActivityHandler(activityUsecase)
 	notificationHandler := handler.NewNotificationHandler(notificationUsecase)
 	changeRequestHandler := handler.NewChangeRequestHandler(changeRequestUsecase, realtimeHub)
 	wsHandler := handler.NewWebSocketHandler(realtimeHub, jwtService, projectUsecase, taskUsecase)
@@ -132,6 +146,7 @@ func main() {
 		taskHandler,
 		commentHandler,
 		checklistItemHandler,
+		activityHandler,
 		notificationHandler,
 		changeRequestHandler,
 		wsHandler,

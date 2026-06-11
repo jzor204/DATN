@@ -8,3 +8,7 @@ type CreateTaskChangeRequestRequest struct {
 	Deadline    OptionalTime      `json:"deadline"`
 	Reason      string            `json:"reason"`
 }
+
+type ReviewTaskChangeRequestRequest struct {
+	ReviewNote string `json:"review_note"`
+}

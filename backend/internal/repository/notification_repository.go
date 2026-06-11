@@ -96,6 +96,14 @@ func (r *NotificationRepository) MarkRead(ctx context.Context, id uint, userID u
 		Update("read_at", &now).Error
 }
 
+func (r *NotificationRepository) MarkAllRead(ctx context.Context, userID uint) error {
+	now := time.Now().UTC()
+	return r.db.WithContext(ctx).
+		Model(&notificationModel{}).
+		Where("user_id = ? AND read_at IS NULL", userID).
+		Update("read_at", &now).Error
+}
+
 func mapNotificationModelToDomain(row notificationModel) *domain.Notification {
 	return &domain.Notification{
 		ID:          row.ID,

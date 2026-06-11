@@ -87,6 +87,15 @@ func (uc *NotificationUsecase) MarkRead(ctx context.Context, userID uint, notifi
 	return nil
 }
 
+func (uc *NotificationUsecase) MarkAllRead(ctx context.Context, userID uint) error {
+	if err := uc.notificationRepo.MarkAllRead(ctx, userID); err != nil {
+		return err
+	}
+
+	uc.invalidateNotificationCaches(ctx, userID)
+	return nil
+}
+
 func (uc *NotificationUsecase) invalidateNotificationCaches(ctx context.Context, userID uint) {
 	deleteCachePatterns(ctx, uc.cacheService, fmt.Sprintf("user:%d:notifications:*", userID))
 }
