@@ -13,4 +13,4 @@ RUN go build -o seed ./cmd/seed
 
 EXPOSE 8080
 
-CMD ["./main"]
+CMD ["sh", "-c", "if [ \"${RUN_MIGRATIONS_ON_START:-false}\" = \"true\" ]; then ./migrate -path ${MIGRATIONS_PATH:-migrations} || exit 1; fi; exec ./main"]

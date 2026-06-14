@@ -55,13 +55,14 @@ Blueprint se tao:
 - `task-management-db`
 - `task-management-redis`
 
-Backend se tu chay:
+Backend se tu chay migration luc container start tren Render:
 
 ```bash
 ./migrate -path migrations_postgres
 ```
 
-truoc khi service duoc deploy. Bo migration nay nam trong `backend/migrations_postgres`.
+Blueprint bat viec nay bang `RUN_MIGRATIONS_ON_START=true` va `MIGRATIONS_PATH=migrations_postgres`.
+Bo migration nay nam trong `backend/migrations_postgres`.
 
 ## 4. Tao du lieu demo neu can
 

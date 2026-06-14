@@ -5,12 +5,15 @@ services:
     plan: free
     rootDir: backend
     healthCheckPath: /health
-    preDeployCommand: ./migrate -path migrations_postgres
     envVars:
       - key: APP_NAME
         value: task-management
       - key: APP_ENV
         value: production
+      - key: RUN_MIGRATIONS_ON_START
+        value: true
+      - key: MIGRATIONS_PATH
+        value: migrations_postgres
       - key: DB_DRIVER
         value: postgres
       - key: DATABASE_URL
