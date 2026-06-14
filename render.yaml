@@ -29,6 +29,12 @@ services:
         generateValue: true
       - key: JWT_ACCESS_TOKEN_EXPIRE_HOURS
         value: "24"
+      - key: BOOTSTRAP_ADMIN_NAME
+        value: "Admin User"
+      - key: BOOTSTRAP_ADMIN_EMAIL
+        value: "admin@example.com"
+      - key: BOOTSTRAP_ADMIN_PASSWORD
+        sync: false
       - key: SWAGGER_SCHEMES
         value: "https"
 

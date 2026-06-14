@@ -34,6 +34,10 @@ type Config struct {
 	JWTSecret                 string
 	JWTAccessTokenExpireHours int
 
+	BootstrapAdminName     string
+	BootstrapAdminEmail    string
+	BootstrapAdminPassword string
+
 	SwaggerHost    string
 	SwaggerSchemes string
 }
@@ -69,6 +73,10 @@ func Load() *Config {
 
 		JWTSecret:                 getEnv("JWT_SECRET", "super-secret-key"),
 		JWTAccessTokenExpireHours: getEnvAsInt("JWT_ACCESS_TOKEN_EXPIRE_HOURS", 24),
+
+		BootstrapAdminName:     getEnv("BOOTSTRAP_ADMIN_NAME", "Admin User"),
+		BootstrapAdminEmail:    getEnv("BOOTSTRAP_ADMIN_EMAIL", "admin@example.com"),
+		BootstrapAdminPassword: getEnv("BOOTSTRAP_ADMIN_PASSWORD", ""),
 
 		SwaggerHost:    getEnvAny("", "SWAGGER_HOST", "RENDER_EXTERNAL_HOSTNAME", "RENDER_EXTERNAL_URL"),
 		SwaggerSchemes: getEnv("SWAGGER_SCHEMES", "http"),

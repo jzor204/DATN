@@ -55,6 +55,49 @@ func (r *UserRepository) Create(ctx context.Context, user *domain.User) error {
 	return nil
 }
 
+func (r *UserRepository) UpsertBootstrapAdmin(
+	ctx context.Context,
+	name string,
+	email string,
+	passwordHash string,
+) (uint, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+
+	var existing userModel
+	err := r.db.WithContext(ctx).
+		Where("email = ?", email).
+		First(&existing).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return 0, err
+	}
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		model := &userModel{
+			Name:         name,
+			Email:        email,
+			PasswordHash: passwordHash,
+			Role:         domain.UserRoleAdmin,
+		}
+		if err := r.db.WithContext(ctx).Create(model).Error; err != nil {
+			return 0, err
+		}
+		return model.ID, nil
+	}
+
+	if err := r.db.WithContext(ctx).
+		Model(&userModel{}).
+		Where("id = ?", existing.ID).
+		Updates(map[string]interface{}{
+			"name":          name,
+			"password_hash": passwordHash,
+			"role":          domain.UserRoleAdmin,
+		}).Error; err != nil {
+		return 0, err
+	}
+
+	return existing.ID, nil
+}
+
 func (r *UserRepository) GetByID(ctx context.Context, id uint) (*domain.User, error) {
 	var model userModel
 

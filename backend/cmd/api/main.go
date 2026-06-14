@@ -10,6 +10,8 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"log"
 	"net/url"
 	"strings"
@@ -64,6 +66,10 @@ func main() {
 
 	passwordService := utils.NewPasswordService()
 	jwtService := utils.NewJWTService(cfg.JWTSecret, cfg.JWTAccessTokenExpireHours)
+
+	if err := bootstrapAdmin(context.Background(), cfg, userRepo, passwordService); err != nil {
+		log.Fatalf("failed to bootstrap admin: %v", err)
+	}
 
 	authUsecase := usecase.NewAuthUsecase(
 		userRepo,
@@ -204,4 +210,42 @@ func swaggerSchemes(cfg *config.Config) []string {
 	}
 
 	return schemes
+}
+
+func bootstrapAdmin(
+	ctx context.Context,
+	cfg *config.Config,
+	userRepo *repository.UserRepository,
+	passwordService *utils.PasswordService,
+) error {
+	password := strings.TrimSpace(cfg.BootstrapAdminPassword)
+	if password == "" {
+		return nil
+	}
+	if len(password) < 6 {
+		return fmt.Errorf("BOOTSTRAP_ADMIN_PASSWORD must be at least 6 characters")
+	}
+
+	name := strings.TrimSpace(cfg.BootstrapAdminName)
+	if name == "" {
+		name = "Admin User"
+	}
+
+	email := strings.ToLower(strings.TrimSpace(cfg.BootstrapAdminEmail))
+	if email == "" {
+		return fmt.Errorf("BOOTSTRAP_ADMIN_EMAIL is required")
+	}
+
+	hashedPassword, err := passwordService.Hash(password)
+	if err != nil {
+		return err
+	}
+
+	userID, err := userRepo.UpsertBootstrapAdmin(ctx, name, email, hashedPassword)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("bootstrap admin ensured: %s (#%d)", email, userID)
+	return nil
 }
