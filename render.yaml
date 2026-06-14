@@ -7,30 +7,30 @@ services:
     healthCheckPath: /health
     envVars:
       - key: APP_NAME
-        value: task-management
+        value: "task-management"
       - key: APP_ENV
-        value: production
+        value: "production"
       - key: RUN_MIGRATIONS_ON_START
-        value: true
+        value: "true"
       - key: MIGRATIONS_PATH
-        value: migrations_postgres
+        value: "migrations_postgres"
       - key: DB_DRIVER
-        value: postgres
+        value: "postgres"
       - key: DATABASE_URL
         fromDatabase:
           name: task-management-db
           property: connectionString
       - key: REDIS_URL
         fromService:
-          type: keyvalue
+          type: redis
           name: task-management-redis
           property: connectionString
       - key: JWT_SECRET
         generateValue: true
       - key: JWT_ACCESS_TOKEN_EXPIRE_HOURS
-        value: 24
+        value: "24"
       - key: SWAGGER_SCHEMES
-        value: https
+        value: "https"
 
   - type: web
     name: task-management-frontend
@@ -47,7 +47,7 @@ services:
       - key: VITE_API_BASE_URL
         sync: false
 
-  - type: keyvalue
+  - type: redis
     name: task-management-redis
     plan: free
     ipAllowList: []
