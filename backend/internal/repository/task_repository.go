@@ -21,8 +21,14 @@ type taskModel struct {
 	Description string     `gorm:"column:description;type:text"`
 	Status      string     `gorm:"column:status;size:50;not null"`
 	Progress    int        `gorm:"column:progress;not null"`
+	Priority    string     `gorm:"column:priority;size:20;not null"`
 	AssigneeID  *uint      `gorm:"column:assignee_id"`
 	Deadline    *time.Time `gorm:"column:deadline"`
+	ReminderAt  *time.Time `gorm:"column:reminder_at"`
+	ArchivedAt  *time.Time `gorm:"column:archived_at"`
+	ArchivedBy  *uint      `gorm:"column:archived_by"`
+	DeletedAt   *time.Time `gorm:"column:deleted_at"`
+	DeletedBy   *uint      `gorm:"column:deleted_by"`
 	CreatedBy   uint       `gorm:"column:created_by;not null"`
 	CreatedAt   time.Time  `gorm:"column:created_at"`
 	UpdatedAt   time.Time  `gorm:"column:updated_at"`
@@ -56,8 +62,10 @@ func (r *TaskRepository) Create(ctx context.Context, task *domain.Task) error {
 		Description: task.Description,
 		Status:      task.Status,
 		Progress:    task.Progress,
+		Priority:    task.Priority,
 		AssigneeID:  task.AssigneeID,
 		Deadline:    task.Deadline,
+		ReminderAt:  task.ReminderAt,
 		CreatedBy:   task.CreatedBy,
 	}
 
@@ -81,7 +89,7 @@ func (r *TaskRepository) GetByID(ctx context.Context, id uint) (*domain.Task, er
 	var row taskModel
 
 	err := r.db.WithContext(ctx).
-		Where("id = ?", id).
+		Where("id = ? AND deleted_at IS NULL", id).
 		First(&row).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -101,14 +109,16 @@ func (r *TaskRepository) GetByID(ctx context.Context, id uint) (*domain.Task, er
 func (r *TaskRepository) Update(ctx context.Context, task *domain.Task) error {
 	result := r.db.WithContext(ctx).
 		Model(&taskModel{}).
-		Where("id = ?", task.ID).
+		Where("id = ? AND deleted_at IS NULL", task.ID).
 		Updates(map[string]interface{}{
 			"title":       task.Title,
 			"description": task.Description,
 			"status":      task.Status,
 			"progress":    task.Progress,
+			"priority":    task.Priority,
 			"assignee_id": task.AssigneeID,
 			"deadline":    task.Deadline,
+			"reminder_at": task.ReminderAt,
 		})
 	if result.Error != nil {
 		return result.Error
@@ -135,30 +145,66 @@ func (r *TaskRepository) Update(ctx context.Context, task *domain.Task) error {
 func (r *TaskRepository) UpdateProgress(ctx context.Context, taskID uint, progress int) error {
 	return r.db.WithContext(ctx).
 		Model(&taskModel{}).
-		Where("id = ?", taskID).
+		Where("id = ? AND deleted_at IS NULL", taskID).
 		Update("progress", progress).Error
 }
 
-func (r *TaskRepository) Delete(ctx context.Context, id uint) error {
+func (r *TaskRepository) Archive(ctx context.Context, id uint, archivedBy uint) error {
+	now := time.Now()
 	return r.db.WithContext(ctx).
-		Delete(&taskModel{}, id).Error
+		Model(&taskModel{}).
+		Where("id = ? AND deleted_at IS NULL", id).
+		Updates(map[string]interface{}{
+			"archived_at": now,
+			"archived_by": archivedBy,
+		}).Error
 }
 
-func (r *TaskRepository) ListByProject(ctx context.Context, projectID uint, page int, pageSize int) ([]*domain.Task, int64, error) {
+func (r *TaskRepository) Restore(ctx context.Context, id uint) error {
+	return r.db.WithContext(ctx).
+		Model(&taskModel{}).
+		Where("id = ? AND deleted_at IS NULL", id).
+		Updates(map[string]interface{}{
+			"archived_at": nil,
+			"archived_by": nil,
+		}).Error
+}
+
+func (r *TaskRepository) Delete(ctx context.Context, id uint, deletedBy uint) error {
+	now := time.Now()
+	return r.db.WithContext(ctx).
+		Model(&taskModel{}).
+		Where("id = ? AND deleted_at IS NULL", id).
+		Updates(map[string]interface{}{
+			"deleted_at": now,
+			"deleted_by": deletedBy,
+		}).Error
+}
+
+func (r *TaskRepository) ListByProject(ctx context.Context, projectID uint, archiveFilter string, page int, pageSize int) ([]*domain.Task, int64, error) {
 	var (
 		rows  []taskModel
 		total int64
 	)
 
-	if err := r.db.WithContext(ctx).
+	query := r.db.WithContext(ctx).
 		Model(&taskModel{}).
-		Where("project_id = ?", projectID).
+		Where("project_id = ? AND deleted_at IS NULL", projectID)
+
+	switch archiveFilter {
+	case domain.TaskArchiveFilterArchived:
+		query = query.Where("archived_at IS NOT NULL")
+	case domain.TaskArchiveFilterAll:
+	default:
+		query = query.Where("archived_at IS NULL")
+	}
+
+	if err := query.
 		Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	if err := r.db.WithContext(ctx).
-		Where("project_id = ?", projectID).
+	if err := query.
 		Order("id DESC").
 		Offset((page - 1) * pageSize).
 		Limit(pageSize).
@@ -195,6 +241,8 @@ func (r *TaskRepository) ListAssignedToUser(
 	buildQuery := func() *gorm.DB {
 		query := r.db.WithContext(ctx).
 			Model(&taskModel{}).
+			Where("tasks.deleted_at IS NULL").
+			Where("tasks.archived_at IS NULL").
 			Where(
 				"tasks.assignee_id = ? OR EXISTS (SELECT 1 FROM task_assignees WHERE task_assignees.task_id = tasks.id AND task_assignees.user_id = ?)",
 				userID,
@@ -338,9 +386,15 @@ func mapTaskModelToDomain(row taskModel) *domain.Task {
 		Description: row.Description,
 		Status:      row.Status,
 		Progress:    row.Progress,
+		Priority:    row.Priority,
 		AssigneeID:  row.AssigneeID,
 		AssigneeIDs: nil,
 		Deadline:    row.Deadline,
+		ReminderAt:  row.ReminderAt,
+		ArchivedAt:  row.ArchivedAt,
+		ArchivedBy:  row.ArchivedBy,
+		DeletedAt:   row.DeletedAt,
+		DeletedBy:   row.DeletedBy,
 		CreatedBy:   row.CreatedBy,
 		CreatedAt:   row.CreatedAt,
 		UpdatedAt:   row.UpdatedAt,

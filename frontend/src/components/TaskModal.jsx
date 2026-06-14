@@ -16,11 +16,27 @@ import {
   listTaskChangeRequests,
   rejectChangeRequest
 } from "../api/changeRequestApi";
-import { getTask, getTaskAssignees, updateTask } from "../api/taskApi";
+import {
+  archiveTask,
+  createTaskAttachment,
+  createTaskLabel,
+  deleteTask,
+  deleteTaskAttachment,
+  deleteTaskLabel,
+  getTask,
+  getTaskAssignees,
+  listTaskAttachments,
+  listTaskLabels,
+  restoreTask,
+  updateTask
+} from "../api/taskApi";
 import {
   formatDate,
   formatDeadline,
+  formatReminder,
+  formatTaskPriority,
   formatTaskStatus,
+  normalizeTaskPriority,
   normalizeTaskProgress,
   toDeadlineInputValue,
   toDeadlinePayload,
@@ -28,7 +44,9 @@ import {
 } from "../utils/format";
 import AlertBanner from "./AlertBanner";
 import DeadlineBadge from "./DeadlineBadge";
+import PriorityBadge from "./PriorityBadge";
 import ProgressIndicator from "./ProgressIndicator";
+import ReminderBadge from "./ReminderBadge";
 import StatusBadge from "./StatusBadge";
 import { useRealtimeSubscription } from "../hooks/useRealtimeSubscription";
 
@@ -37,7 +55,9 @@ const initialTaskForm = {
   description: "",
   status: "todo",
   assignee_id: "",
-  deadline: ""
+  deadline: "",
+  reminder_at: "",
+  priority: "none"
 };
 
 const initialChangeRequestForm = {
@@ -45,6 +65,8 @@ const initialChangeRequestForm = {
   description: "",
   status: "todo",
   deadline: "",
+  reminder_at: "",
+  priority: "none",
   assignee_ids: [],
   reason: ""
 };
@@ -112,6 +134,8 @@ function buildChangeRequestForm(task) {
     description: task.description || "",
     status: toTaskStatusInput(task.status),
     deadline: toDeadlineInputValue(task.deadline),
+    reminder_at: toDeadlineInputValue(task.reminder_at),
+    priority: normalizeTaskPriority(task.priority),
     assignee_ids: getTaskAssigneeIds(task),
     reason: ""
   };
@@ -152,6 +176,10 @@ function normalizeChecklistPayload(payload) {
   }));
 }
 
+function normalizeListPayload(payload) {
+  return Array.isArray(payload) ? payload : payload?.data || [];
+}
+
 function getChecklistCounts(checklist) {
   const items = checklist.items || [];
   const done = items.filter((item) => item.is_done).length;
@@ -179,6 +207,60 @@ function ChecklistSummary({ checklists, progress }) {
       </div>
       <ProgressIndicator compact progress={progress} />
     </div>
+  );
+}
+
+const labelToneMap = {
+  blue: "bg-blue-100 text-blue-700",
+  green: "bg-emerald-100 text-emerald-800",
+  yellow: "bg-amber-100 text-amber-800",
+  orange: "bg-orange-100 text-orange-800",
+  red: "bg-red-100 text-red-700",
+  purple: "bg-violet-100 text-violet-700",
+  pink: "bg-pink-100 text-pink-700",
+  sky: "bg-sky-100 text-sky-700",
+  slate: "bg-slate-100 text-slate-700"
+};
+
+const labelColorOptions = [
+  "blue",
+  "green",
+  "yellow",
+  "orange",
+  "red",
+  "purple",
+  "pink",
+  "sky",
+  "slate"
+];
+
+const labelColorLabels = {
+  blue: "Xanh dương",
+  green: "Xanh lá",
+  yellow: "Vàng",
+  orange: "Cam",
+  red: "Đỏ",
+  purple: "Tím",
+  pink: "Hồng",
+  sky: "Xanh trời",
+  slate: "Xám"
+};
+
+function TaskLabelPill({ label, onDelete, disabled }) {
+  return (
+    <span className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs font-semibold ${labelToneMap[label.color] || labelToneMap.blue}`}>
+      {label.name}
+      {onDelete ? (
+        <button
+          className="rounded-full px-1 text-[11px] opacity-70 transition hover:bg-white/40 hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+          disabled={disabled}
+          onClick={onDelete}
+          type="button"
+        >
+          x
+        </button>
+      ) : null}
+    </span>
   );
 }
 
@@ -216,8 +298,14 @@ function formatChangeRequestValue(key, value, members) {
   if (key === "deadline") {
     return formatDeadline(value);
   }
+  if (key === "reminder_at") {
+    return formatReminder(value);
+  }
   if (key === "status") {
     return formatTaskStatus(value);
+  }
+  if (key === "priority") {
+    return formatTaskPriority(value);
   }
   if (key === "assignee_ids") {
     const ids = Array.isArray(value) ? value : [];
@@ -228,12 +316,19 @@ function formatChangeRequestValue(key, value, members) {
 }
 
 function getChangeRequestFieldLabel(key) {
+  if (key === "priority") {
+    return "Ưu tiên";
+  }
+  if (key === "reminder_at") {
+    return "Nhắc hạn";
+  }
+
   const labels = {
     title: "Tiêu đề",
     description: "Mô tả",
     status: "Trạng thái",
     assignee_ids: "Người phụ trách",
-    deadline: "Deadline"
+    deadline: "Hạn chót"
   };
 
   return labels[key] || key;
@@ -349,6 +444,8 @@ export default function TaskModal({
   const [task, setTask] = useState(null);
   const [taskForm, setTaskForm] = useState(initialTaskForm);
   const [checklists, setChecklists] = useState([]);
+  const [labels, setLabels] = useState([]);
+  const [attachments, setAttachments] = useState([]);
   const [comments, setComments] = useState([]);
   const [activities, setActivities] = useState([]);
   const [changeRequests, setChangeRequests] = useState([]);
@@ -363,6 +460,10 @@ export default function TaskModal({
   const [editingCommentContent, setEditingCommentContent] = useState("");
   const [memberPickerOpen, setMemberPickerOpen] = useState(false);
   const [memberSearch, setMemberSearch] = useState("");
+  const [showLabelComposer, setShowLabelComposer] = useState(false);
+  const [showAttachmentComposer, setShowAttachmentComposer] = useState(false);
+  const [newLabel, setNewLabel] = useState({ name: "", color: "blue" });
+  const [newAttachment, setNewAttachment] = useState({ name: "", url: "" });
   const [descriptionEditing, setDescriptionEditing] = useState(false);
   const [deadlineEditing, setDeadlineEditing] = useState(false);
   const [changeRequestOpen, setChangeRequestOpen] = useState(false);
@@ -372,6 +473,7 @@ export default function TaskModal({
   const [toast, setToast] = useState({ id: 0, message: "", tone: "success" });
   const [savingTask, setSavingTask] = useState(false);
   const [savingChecklist, setSavingChecklist] = useState(false);
+  const [savingMetadata, setSavingMetadata] = useState(false);
   const [savingComment, setSavingComment] = useState(false);
   const [sendingChangeRequest, setSendingChangeRequest] = useState(false);
   const [reviewingChangeRequestId, setReviewingChangeRequestId] = useState("");
@@ -392,6 +494,7 @@ export default function TaskModal({
     canManageTask ||
     currentProjectMember?.role_in_project === "member" ||
     currentUser.role === "admin";
+  const canEditMetadata = canEditChecklist;
 
   const totalChecklistItems = useMemo(() => getAllChecklistItems(checklists), [checklists]);
   const doneChecklistItems = totalChecklistItems.filter((item) => item.is_done).length;
@@ -431,13 +534,25 @@ export default function TaskModal({
         description: taskPayload.description || "",
         status: toTaskStatusInput(taskPayload.status),
         assignee_id: taskPayload.assignee_id ? String(taskPayload.assignee_id) : "",
-        deadline: toDeadlineInputValue(taskPayload.deadline)
+        deadline: toDeadlineInputValue(taskPayload.deadline),
+        reminder_at: toDeadlineInputValue(taskPayload.reminder_at),
+        priority: normalizeTaskPriority(taskPayload.priority)
       });
       setChangeRequestForm(buildChangeRequestForm(taskPayload));
 
-      const [assigneeResult, checklistResult, commentResult, activityResult, changeRequestResult] = await Promise.allSettled([
+      const [
+        assigneeResult,
+        checklistResult,
+        labelResult,
+        attachmentResult,
+        commentResult,
+        activityResult,
+        changeRequestResult
+      ] = await Promise.allSettled([
         getTaskAssignees(taskId),
         listChecklistsByTask(taskId),
+        listTaskLabels(taskId),
+        listTaskAttachments(taskId),
         listCommentsByTask(taskId, 1, 20),
         listActivitiesByTask(taskId, 1, 30),
         listTaskChangeRequests(taskId, 1, 20)
@@ -457,6 +572,20 @@ export default function TaskModal({
       } else {
         setChecklists([]);
         showToast(checklistResult.reason?.message || "Không thể tải checklist.", "error");
+      }
+
+      if (labelResult.status === "fulfilled") {
+        setLabels(normalizeListPayload(labelResult.value));
+      } else {
+        setLabels([]);
+        showToast(labelResult.reason?.message || "Không thể tải nhãn.", "error");
+      }
+
+      if (attachmentResult.status === "fulfilled") {
+        setAttachments(normalizeListPayload(attachmentResult.value));
+      } else {
+        setAttachments([]);
+        showToast(attachmentResult.reason?.message || "Không thể tải đính kèm.", "error");
       }
 
       if (commentResult.status === "fulfilled") {
@@ -628,6 +757,16 @@ export default function TaskModal({
     await saveTaskPatch({ status: nextStatus });
   }
 
+  async function handlePriorityChange(nextPriority) {
+    setTaskForm((prev) => ({ ...prev, priority: nextPriority }));
+
+    if (!task || !canManageTask || nextPriority === normalizeTaskPriority(task.priority)) {
+      return;
+    }
+
+    await saveTaskPatch({ priority: nextPriority });
+  }
+
   async function handleToggleAssignee(userId) {
     if (!task || !canManageTask || savingTask) {
       return;
@@ -688,8 +827,17 @@ export default function TaskModal({
       payload.status = nextStatus;
     }
 
+    const nextPriority = normalizeTaskPriority(changeRequestForm.priority);
+    if (nextPriority !== normalizeTaskPriority(task.priority)) {
+      payload.priority = nextPriority;
+    }
+
     if (changeRequestForm.deadline !== toDeadlineInputValue(task.deadline)) {
       payload.deadline = toDeadlinePayload(changeRequestForm.deadline);
+    }
+
+    if (changeRequestForm.reminder_at !== toDeadlineInputValue(task.reminder_at)) {
+      payload.reminder_at = toDeadlinePayload(changeRequestForm.reminder_at);
     }
 
     if (!sameNumberSet(changeRequestForm.assignee_ids, getTaskAssigneeIds(task))) {
@@ -808,12 +956,19 @@ export default function TaskModal({
     }
 
     const currentDeadlineInput = toDeadlineInputValue(task.deadline);
-    if (taskForm.deadline === currentDeadlineInput) {
+    const currentReminderInput = toDeadlineInputValue(task.reminder_at);
+    if (taskForm.deadline === currentDeadlineInput && taskForm.reminder_at === currentReminderInput) {
       setDeadlineEditing(false);
       return;
     }
 
-    await saveTaskPatch({ deadline: toDeadlinePayload(taskForm.deadline) }, () => setDeadlineEditing(false));
+    await saveTaskPatch(
+      {
+        deadline: toDeadlinePayload(taskForm.deadline),
+        reminder_at: toDeadlinePayload(taskForm.reminder_at)
+      },
+      () => setDeadlineEditing(false)
+    );
   }
 
   async function handleClearDeadline() {
@@ -821,17 +976,21 @@ export default function TaskModal({
       return;
     }
 
-    if (!task.deadline && !taskForm.deadline) {
+    if (!task.deadline && !task.reminder_at && !taskForm.deadline && !taskForm.reminder_at) {
       setDeadlineEditing(false);
       return;
     }
 
-    setTaskForm((prev) => ({ ...prev, deadline: "" }));
-    await saveTaskPatch({ deadline: null }, () => setDeadlineEditing(false));
+    setTaskForm((prev) => ({ ...prev, deadline: "", reminder_at: "" }));
+    await saveTaskPatch({ deadline: null, reminder_at: null }, () => setDeadlineEditing(false));
   }
 
   function handleCancelDeadline() {
-    setTaskForm((prev) => ({ ...prev, deadline: toDeadlineInputValue(task?.deadline) }));
+    setTaskForm((prev) => ({
+      ...prev,
+      deadline: toDeadlineInputValue(task?.deadline),
+      reminder_at: toDeadlineInputValue(task?.reminder_at)
+    }));
     setDeadlineEditing(false);
   }
 
@@ -932,6 +1091,155 @@ export default function TaskModal({
     }
   }
 
+  async function handleCreateLabel(event) {
+    event.preventDefault();
+    const name = newLabel.name.trim();
+    if (!task || !canEditMetadata || !name) {
+      return;
+    }
+
+    setSavingMetadata(true);
+
+    try {
+      await createTaskLabel(task.id, {
+        name,
+        color: newLabel.color
+      });
+      setNewLabel({ name: "", color: "blue" });
+      setShowLabelComposer(false);
+      await refreshAfterMutation();
+      showToast("Đã thêm nhãn.", "success");
+    } catch (err) {
+      showToast(err.message, "error");
+    } finally {
+      setSavingMetadata(false);
+    }
+  }
+
+  async function handleDeleteLabel(labelId) {
+    if (!canEditMetadata) {
+      return;
+    }
+
+    setSavingMetadata(true);
+
+    try {
+      await deleteTaskLabel(labelId);
+      await refreshAfterMutation();
+      showToast("Đã xóa nhãn.", "success");
+    } catch (err) {
+      showToast(err.message, "error");
+    } finally {
+      setSavingMetadata(false);
+    }
+  }
+
+  async function handleCreateAttachment(event) {
+    event.preventDefault();
+    const name = newAttachment.name.trim();
+    const url = newAttachment.url.trim();
+    if (!task || !canEditMetadata || !name || !url) {
+      return;
+    }
+
+    setSavingMetadata(true);
+
+    try {
+      await createTaskAttachment(task.id, { name, url });
+      setNewAttachment({ name: "", url: "" });
+      setShowAttachmentComposer(false);
+      await refreshAfterMutation();
+      showToast("Đã thêm đính kèm.", "success");
+    } catch (err) {
+      showToast(err.message, "error");
+    } finally {
+      setSavingMetadata(false);
+    }
+  }
+
+  async function handleDeleteAttachment(attachmentId) {
+    if (!canEditMetadata) {
+      return;
+    }
+
+    setSavingMetadata(true);
+
+    try {
+      await deleteTaskAttachment(attachmentId);
+      await refreshAfterMutation();
+      showToast("Đã xóa đính kèm.", "success");
+    } catch (err) {
+      showToast(err.message, "error");
+    } finally {
+      setSavingMetadata(false);
+    }
+  }
+
+  async function handleArchiveTask() {
+    if (!task || !canManageTask || savingTask) {
+      return;
+    }
+
+    const confirmed = window.confirm("Lưu trữ công việc này?");
+    if (!confirmed) {
+      return;
+    }
+
+    setSavingTask(true);
+
+    try {
+      await archiveTask(task.id);
+      await refreshAfterMutation();
+      showToast("Đã lưu trữ công việc.", "success");
+    } catch (err) {
+      showToast(err.message, "error");
+    } finally {
+      setSavingTask(false);
+    }
+  }
+
+  async function handleRestoreTask() {
+    if (!task || !canManageTask || savingTask) {
+      return;
+    }
+
+    setSavingTask(true);
+
+    try {
+      await restoreTask(task.id);
+      await refreshAfterMutation();
+      showToast("Đã khôi phục công việc.", "success");
+    } catch (err) {
+      showToast(err.message, "error");
+    } finally {
+      setSavingTask(false);
+    }
+  }
+
+  async function handleSoftDeleteTask() {
+    if (!task || !canManageTask || savingTask) {
+      return;
+    }
+
+    const confirmed = window.confirm("Xóa mềm công việc này? Dữ liệu vẫn được giữ trong hệ thống.");
+    if (!confirmed) {
+      return;
+    }
+
+    setSavingTask(true);
+
+    try {
+      await deleteTask(task.id);
+      await onChanged?.();
+      showToast("Đã xóa mềm công việc.", "success");
+      onClose();
+    } catch (err) {
+      showToast(err.message, "error");
+    } finally {
+      setSavingTask(false);
+    }
+  }
+
   async function handleCreateComment(event) {
     event.preventDefault();
     const content = newComment.trim();
@@ -1026,7 +1334,16 @@ export default function TaskModal({
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               {task ? <StatusBadge status={task.status} /> : null}
+              {task ? <PriorityBadge priority={task.priority} /> : null}
               {task ? <DeadlineBadge deadline={task.deadline} status={task.status} /> : null}
+              {task?.reminder_at ? (
+                <ReminderBadge deadline={task.deadline} reminderAt={task.reminder_at} />
+              ) : null}
+              {task?.archived_at ? (
+                <span className="inline-flex rounded-full bg-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                  Đã lưu trữ
+                </span>
+              ) : null}
               {assigneeIds.map((userId) => (
                 <Avatar key={userId} member={getMemberById(members, userId)} size="sm" userId={userId} />
               ))}
@@ -1075,6 +1392,22 @@ export default function TaskModal({
                   type="button"
                 >
                   + Việc cần làm
+                </button>
+                <button
+                  className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={!canEditMetadata}
+                  onClick={() => setShowLabelComposer((prev) => !prev)}
+                  type="button"
+                >
+                  + Nhãn
+                </button>
+                <button
+                  className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={!canEditMetadata}
+                  onClick={() => setShowAttachmentComposer((prev) => !prev)}
+                  type="button"
+                >
+                  + Đính kèm
                 </button>
                 {canRequestChange ? (
                   <button
@@ -1168,7 +1501,7 @@ export default function TaskModal({
                     </label>
 
                     <label className="block space-y-2">
-                      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Deadline đề xuất</span>
+                      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Hạn chót đề xuất</span>
                       <input
                         className="w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
                         disabled={sendingChangeRequest}
@@ -1253,7 +1586,7 @@ export default function TaskModal({
                 </form>
               ) : null}
 
-              <div className="grid gap-4 md:grid-cols-[180px_1fr]">
+              <div className="grid gap-4 md:grid-cols-[180px_180px_1fr]">
                 <label className="block space-y-2">
                   <span className="text-sm font-semibold text-slate-700">Trạng thái</span>
                   <select
@@ -1268,6 +1601,22 @@ export default function TaskModal({
                   </select>
                 </label>
 
+                <label className="block space-y-2">
+                  <span className="text-sm font-semibold text-slate-700">Ưu tiên</span>
+                  <select
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
+                    disabled={!canManageTask || savingTask}
+                    onChange={(event) => handlePriorityChange(event.target.value)}
+                    value={taskForm.priority}
+                  >
+                    <option value="none">Không ưu tiên</option>
+                    <option value="low">Thấp</option>
+                    <option value="medium">Trung bình</option>
+                    <option value="high">Cao</option>
+                    <option value="urgent">Khẩn cấp</option>
+                  </select>
+                </label>
+
                 <div className="space-y-2">
                   <span className="text-sm font-semibold text-slate-700">Tiến độ checklist</span>
                   <ChecklistSummary checklists={checklists} progress={task.progress} />
@@ -1276,7 +1625,70 @@ export default function TaskModal({
 
               <section className="space-y-3">
                 <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-sm font-semibold text-slate-700">Deadline</h3>
+                  <h3 className="text-sm font-semibold text-slate-700">Nhãn</h3>
+                  <button
+                    className="rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-400 hover:text-slate-900 disabled:opacity-50"
+                    disabled={!canEditMetadata}
+                    onClick={() => setShowLabelComposer((prev) => !prev)}
+                    type="button"
+                  >
+                    Thêm nhãn
+                  </button>
+                </div>
+
+                {labels.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {labels.map((label) => (
+                      <TaskLabelPill
+                        disabled={savingMetadata}
+                        key={label.id}
+                        label={label}
+                        onDelete={canEditMetadata ? () => handleDeleteLabel(label.id) : null}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-sm text-slate-500">
+                    Chưa có nhãn.
+                  </div>
+                )}
+
+                {showLabelComposer ? (
+                  <form className="grid gap-2 sm:grid-cols-[1fr_130px_auto]" onSubmit={handleCreateLabel}>
+                    <input
+                      autoFocus
+                      className="rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                      disabled={!canEditMetadata || savingMetadata}
+                      onChange={(event) => setNewLabel((prev) => ({ ...prev, name: event.target.value }))}
+                      placeholder="Tên nhãn"
+                      value={newLabel.name}
+                    />
+                    <select
+                      className="rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                      disabled={!canEditMetadata || savingMetadata}
+                      onChange={(event) => setNewLabel((prev) => ({ ...prev, color: event.target.value }))}
+                      value={newLabel.color}
+                    >
+                      {labelColorOptions.map((color) => (
+                        <option key={color} value={color}>
+                          {labelColorLabels[color] || color}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      className="rounded-md bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+                      disabled={!canEditMetadata || savingMetadata || !newLabel.name.trim()}
+                      type="submit"
+                    >
+                      Thêm
+                    </button>
+                  </form>
+                ) : null}
+              </section>
+
+              <section className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-slate-700">Hạn chót</h3>
                   {!deadlineEditing ? (
                     <button
                       className="rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-400 hover:text-slate-900 disabled:opacity-50"
@@ -1284,23 +1696,42 @@ export default function TaskModal({
                       onClick={() => setDeadlineEditing(true)}
                       type="button"
                     >
-                      {task.deadline ? "Chỉnh sửa" : "Thêm deadline"}
+                      {task.deadline ? "Chỉnh sửa" : "Thêm hạn chót"}
                     </button>
                   ) : null}
                 </div>
 
                 {deadlineEditing ? (
                   <form className="rounded-lg border border-slate-200 bg-slate-50 p-3" onSubmit={handleSaveDeadline}>
-                    <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
-                      <input
-                        autoFocus
-                        className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
-                        disabled={!canManageTask || savingTask}
-                        onChange={(event) => setTaskForm((prev) => ({ ...prev, deadline: event.target.value }))}
-                        type="datetime-local"
-                        value={taskForm.deadline}
-                      />
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="block space-y-2">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Hạn chót</span>
+                        <input
+                          autoFocus
+                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
+                          disabled={!canManageTask || savingTask}
+                          onChange={(event) => setTaskForm((prev) => ({ ...prev, deadline: event.target.value }))}
+                          type="datetime-local"
+                          value={taskForm.deadline}
+                        />
+                      </label>
+                      <label className="block space-y-2">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Nhắc hạn</span>
+                        <input
+                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
+                          disabled={!canManageTask || savingTask}
+                          onChange={(event) => setTaskForm((prev) => ({ ...prev, reminder_at: event.target.value }))}
+                          type="datetime-local"
+                          value={taskForm.reminder_at}
+                        />
+                      </label>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
                       <DeadlineBadge deadline={toDeadlinePayload(taskForm.deadline) || task.deadline} status={task.status} />
+                      <ReminderBadge
+                        deadline={toDeadlinePayload(taskForm.deadline) || task.deadline}
+                        reminderAt={taskForm.reminder_at ? toDeadlinePayload(taskForm.reminder_at) : null}
+                      />
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button
@@ -1336,6 +1767,7 @@ export default function TaskModal({
                   >
                     <DeadlineBadge deadline={task.deadline} status={task.status} />
                     <span className="truncate text-sm font-semibold text-ink">{formatDeadline(task.deadline)}</span>
+                    <ReminderBadge deadline={task.deadline} reminderAt={task.reminder_at} />
                   </button>
                 )}
               </section>
@@ -1393,6 +1825,130 @@ export default function TaskModal({
                   </button>
                 )}
               </section>
+
+              <section className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-slate-700">Đính kèm</h3>
+                  <button
+                    className="rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-400 hover:text-slate-900 disabled:opacity-50"
+                    disabled={!canEditMetadata}
+                    onClick={() => setShowAttachmentComposer((prev) => !prev)}
+                    type="button"
+                  >
+                    Thêm file/link
+                  </button>
+                </div>
+
+                {showAttachmentComposer ? (
+                  <form className="rounded-lg border border-slate-200 bg-slate-50 p-3" onSubmit={handleCreateAttachment}>
+                    <div className="grid gap-2 sm:grid-cols-[180px_1fr_auto]">
+                      <input
+                        autoFocus
+                        className="rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                        disabled={!canEditMetadata || savingMetadata}
+                        onChange={(event) => setNewAttachment((prev) => ({ ...prev, name: event.target.value }))}
+                        placeholder="Tên đính kèm"
+                        value={newAttachment.name}
+                      />
+                      <input
+                        className="rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                        disabled={!canEditMetadata || savingMetadata}
+                        onChange={(event) => setNewAttachment((prev) => ({ ...prev, url: event.target.value }))}
+                        placeholder="https://..."
+                        value={newAttachment.url}
+                      />
+                      <button
+                        className="rounded-md bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+                        disabled={!canEditMetadata || savingMetadata || !newAttachment.name.trim() || !newAttachment.url.trim()}
+                        type="submit"
+                      >
+                        Thêm
+                      </button>
+                    </div>
+                  </form>
+                ) : null}
+
+                {attachments.length === 0 ? (
+                  <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-sm text-slate-500">
+                    Chưa có đính kèm.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {attachments.map((attachment) => (
+                      <div
+                        className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2"
+                        key={attachment.id}
+                      >
+                        <a
+                          className="min-w-0 truncate text-sm font-semibold text-blue-700 transition hover:text-blue-900"
+                          href={attachment.url}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          {attachment.name}
+                        </a>
+                        <button
+                          className="rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-500 transition hover:border-red-200 hover:text-red-700 disabled:opacity-50"
+                          disabled={!canEditMetadata || savingMetadata}
+                          onClick={() => handleDeleteAttachment(attachment.id)}
+                          type="button"
+                        >
+                          Xóa
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              {canManageTask ? (
+                <section className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Quản lý công việc
+                      </div>
+                      <h3 className="text-sm font-semibold text-slate-700">
+                        Lưu trữ và xóa mềm
+                      </h3>
+                    </div>
+                    {task?.archived_at ? (
+                      <span className="rounded-full bg-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                        Đã lưu trữ
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {task?.archived_at ? (
+                      <button
+                        className="rounded-md border border-emerald-200 px-3 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
+                        disabled={savingTask}
+                        onClick={handleRestoreTask}
+                        type="button"
+                      >
+                        Khôi phục
+                      </button>
+                    ) : (
+                      <button
+                        className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500 disabled:opacity-50"
+                        disabled={savingTask}
+                        onClick={handleArchiveTask}
+                        type="button"
+                      >
+                        Lưu trữ
+                      </button>
+                    )}
+                    <button
+                      className="rounded-md border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                      disabled={savingTask}
+                      onClick={handleSoftDeleteTask}
+                      type="button"
+                    >
+                      Xóa mềm
+                    </button>
+                  </div>
+                </section>
+              ) : null}
 
               <section className="space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">

@@ -6,7 +6,9 @@ import DeadlineBadge from "../components/DeadlineBadge";
 import EmptyState from "../components/EmptyState";
 import LoadingScreen from "../components/LoadingScreen";
 import Pagination from "../components/Pagination";
+import PriorityBadge from "../components/PriorityBadge";
 import ProgressIndicator from "../components/ProgressIndicator";
+import ReminderBadge from "../components/ReminderBadge";
 import SectionCard from "../components/SectionCard";
 import StatusBadge from "../components/StatusBadge";
 import { useRealtimeSubscription } from "../hooks/useRealtimeSubscription";
@@ -15,6 +17,7 @@ import {
   formatDeadline,
   formatTaskStatus,
   getDeadlineState,
+  normalizeTaskPriority,
   normalizeTaskProgress
 } from "../utils/format";
 import { navigateTo } from "../utils/router";
@@ -34,9 +37,17 @@ function normalizeStatus(status) {
   return status || "todo";
 }
 
-function MetricCard({ label, value, hint }) {
+function MetricCard({ label, value, hint, tone = "default" }) {
+  const tones = {
+    default: "border-slate-200 bg-white",
+    blue: "border-blue-200 bg-blue-50",
+    amber: "border-amber-200 bg-amber-50",
+    red: "border-red-200 bg-red-50",
+    emerald: "border-emerald-200 bg-emerald-50"
+  };
+
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-panel">
+    <div className={`rounded-lg border px-4 py-4 shadow-panel ${tones[tone] || tones.default}`}>
       <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</div>
       <div className="mt-2 text-2xl font-semibold text-ink">{value}</div>
       {hint ? <div className="mt-1 text-xs text-slate-500">{hint}</div> : null}
@@ -51,7 +62,11 @@ function ProjectRealtimeSubscription({ projectId, currentUserId, onRefresh }) {
     projectId,
     currentUserId,
     onEvent: (event) => {
-      if (event.type?.startsWith("task.") || event.type?.startsWith("comment.")) {
+      if (
+        event.type?.startsWith("task.") ||
+        event.type?.startsWith("comment.") ||
+        event.type?.startsWith("checklist.")
+      ) {
         onRefresh();
       }
     }
@@ -134,21 +149,37 @@ export default function MyTasksPage({ currentUser }) {
   const metrics = useMemo(() => {
     return metricsSource.reduce(
       (acc, task) => {
+        const status = normalizeStatus(task.status);
         const deadlineState = getDeadlineState(task.deadline, task.status);
         const progress = normalizeTaskProgress(task.progress);
+        const priority = normalizeTaskPriority(task.priority);
 
         acc.total += 1;
-        acc[normalizeStatus(task.status)] += 1;
         acc.progressTotal += progress;
+        if (status in acc) {
+          acc[status] += 1;
+        }
         if (deadlineState === "overdue") {
           acc.overdue += 1;
         }
         if (deadlineState === "today" || deadlineState === "soon") {
           acc.upcoming += 1;
         }
+        if (priority === "urgent" || priority === "high") {
+          acc.important += 1;
+        }
         return acc;
       },
-      { total: 0, todo: 0, "in-progress": 0, done: 0, overdue: 0, upcoming: 0, progressTotal: 0 }
+      {
+        total: 0,
+        todo: 0,
+        "in-progress": 0,
+        done: 0,
+        overdue: 0,
+        upcoming: 0,
+        important: 0,
+        progressTotal: 0
+      }
     );
   }, [metricsSource]);
 
@@ -169,11 +200,11 @@ export default function MyTasksPage({ currentUser }) {
         <div>
           <h1 className="text-2xl font-semibold text-ink">Công việc của tôi</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Các công việc đang được gán cho bạn trên tất cả dự án.
+            Theo dõi các công việc đang giao cho bạn, không bao gồm task đã lưu trữ hoặc đã xóa mềm.
           </p>
         </div>
         <button
-          className="rounded-md bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
+          className="rounded-md border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-blue-400 hover:text-blue-700"
           onClick={() => setRefreshKey((prev) => prev + 1)}
           type="button"
         >
@@ -182,20 +213,24 @@ export default function MyTasksPage({ currentUser }) {
       </div>
 
       <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-7">
-        <MetricCard label="Tổng công việc" value={metrics.total} hint="Được gán cho tôi" />
+        <MetricCard label="Tổng việc" value={metrics.total} hint="Đang hoạt động" />
         <MetricCard label="Cần làm" value={metrics.todo} />
-        <MetricCard label="Đang làm" value={metrics["in-progress"]} />
+        <MetricCard label="Đang làm" value={metrics["in-progress"]} tone="blue" />
+        <MetricCard label="Hoàn thành" value={metrics.done} tone="emerald" />
+        <MetricCard label="Quá hạn" value={metrics.overdue} tone={metrics.overdue > 0 ? "red" : "default"} />
+        <MetricCard label="Sắp đến hạn" value={metrics.upcoming} tone="amber" />
         <MetricCard label="Tiến độ TB" value={`${averageProgress}%`} />
-        <MetricCard label="Quá hạn" value={metrics.overdue} />
-        <MetricCard label="Sắp đến hạn" value={metrics.upcoming} hint="Hôm nay hoặc 72h tới" />
-        <MetricCard label="Hoàn thành" value={metrics.done} />
       </div>
 
-      <SectionCard title="Danh sách công việc" eyebrow="Công việc của tôi">
+      <SectionCard
+        title="Danh sách công việc"
+        eyebrow="Công việc được giao"
+        description="Lọc nhanh theo project và trạng thái để biết hôm nay cần xử lý việc nào trước."
+      >
         <AlertBanner message={pageError} />
 
         <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div className="grid gap-3 md:grid-cols-[220px_1fr]">
+          <div className="grid gap-3 md:grid-cols-[240px_1fr]">
             <select
               className="rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               onChange={(event) => handleProjectFilterChange(event.target.value)}
@@ -229,16 +264,16 @@ export default function MyTasksPage({ currentUser }) {
 
           <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
             <span className="h-2 w-2 rounded-full bg-emerald-500" />
-            Đang lắng nghe event task trong project
+            Cập nhật realtime theo project
           </span>
         </div>
 
-        {loading ? <LoadingScreen label="Đang tải công việc được gán..." /> : null}
+        {loading ? <LoadingScreen label="Đang tải công việc được giao..." /> : null}
 
         {!loading && tasks.length === 0 ? (
           <EmptyState
             description="Không có task nào khớp bộ lọc hiện tại."
-            title="Chưa có công việc được gán"
+            title="Chưa có công việc được giao"
           />
         ) : null}
 
@@ -251,10 +286,11 @@ export default function MyTasksPage({ currentUser }) {
                     <th className="px-4 py-3">Công việc</th>
                     <th className="px-4 py-3">Dự án</th>
                     <th className="px-4 py-3">Trạng thái</th>
+                    <th className="px-4 py-3">Ưu tiên</th>
                     <th className="px-4 py-3">Tiến độ</th>
-                    <th className="px-4 py-3">Deadline</th>
-                    <th className="px-4 py-3">Cập nhật lúc</th>
-                    <th className="px-4 py-3 text-right">Hành động</th>
+                    <th className="px-4 py-3">Hạn chót</th>
+                    <th className="px-4 py-3">Cập nhật</th>
+                    <th className="px-4 py-3 text-right">Thao tác</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
@@ -273,12 +309,18 @@ export default function MyTasksPage({ currentUser }) {
                         <StatusBadge status={task.status} />
                       </td>
                       <td className="px-4 py-4">
+                        <PriorityBadge priority={task.priority} />
+                      </td>
+                      <td className="px-4 py-4">
                         <ProgressIndicator compact progress={task.progress} />
                       </td>
                       <td className="px-4 py-4">
                         <div className="flex flex-col gap-1">
                           <DeadlineBadge deadline={task.deadline} status={task.status} />
                           <span className="text-xs text-slate-500">{formatDeadline(task.deadline)}</span>
+                          {task.reminder_at ? (
+                            <ReminderBadge deadline={task.deadline} reminderAt={task.reminder_at} />
+                          ) : null}
                         </div>
                       </td>
                       <td className="px-4 py-4 text-slate-600">
@@ -302,19 +344,6 @@ export default function MyTasksPage({ currentUser }) {
             <Pagination pagination={pagination} onPageChange={setPage} />
           </div>
         ) : null}
-      </SectionCard>
-
-      <SectionCard title="Realtime scope" eyebrow="Sự kiện">
-        <div className="grid gap-3 md:grid-cols-3">
-          {["task.updated", "task.deleted", "comment.created"].map((eventType) => (
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3" key={eventType}>
-              <div className="text-sm font-semibold text-ink">{eventType}</div>
-              <div className="mt-1 text-xs text-slate-500">
-                Tải lại công việc được gán khi nhận event.
-              </div>
-            </div>
-          ))}
-        </div>
       </SectionCard>
     </div>
   );

@@ -96,6 +96,7 @@ func (h *ChangeRequestHandler) CreateForTask(c *fiber.Ctx) error {
 			Title:       req.Title,
 			Description: req.Description,
 			Status:      req.Status,
+			Priority:    req.Priority,
 			AssigneeIDs: usecase.OptionalUintSliceInput{
 				Set:    req.AssigneeIDs.Set,
 				Values: req.AssigneeIDs.Values,
@@ -103,6 +104,10 @@ func (h *ChangeRequestHandler) CreateForTask(c *fiber.Ctx) error {
 			Deadline: usecase.OptionalTimeInput{
 				Set:   req.Deadline.Set,
 				Value: req.Deadline.Value,
+			},
+			ReminderAt: usecase.OptionalTimeInput{
+				Set:   req.ReminderAt.Set,
+				Value: req.ReminderAt.Value,
 			},
 			Reason: req.Reason,
 		},

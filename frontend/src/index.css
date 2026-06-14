@@ -106,8 +106,20 @@ html.dark .bg-orange-100 {
   background-color: rgba(249, 115, 22, 0.32) !important;
 }
 
+html.dark .bg-sky-100 {
+  background-color: rgba(14, 165, 233, 0.32) !important;
+}
+
 html.dark .bg-indigo-100 {
   background-color: rgba(99, 102, 241, 0.34) !important;
+}
+
+html.dark .bg-violet-100 {
+  background-color: rgba(139, 92, 246, 0.34) !important;
+}
+
+html.dark .bg-pink-100 {
+  background-color: rgba(236, 72, 153, 0.30) !important;
 }
 
 html.dark .border-slate-100,
@@ -174,6 +186,12 @@ html.dark .text-orange-800 {
 
 html.dark .text-indigo-700 {
   color: #c7d2fe !important;
+}
+
+html.dark .text-sky-700,
+html.dark .text-violet-700,
+html.dark .text-pink-700 {
+  color: #e0f2fe !important;
 }
 
 html.dark .placeholder\:text-slate-500::placeholder,

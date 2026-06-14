@@ -23,11 +23,17 @@ axiosClient.interceptors.response.use(
   (response) => response.data,
   (error) => {
     const status = error.response?.status;
+    const fallbackMessage =
+      status === 404
+        ? "Không tìm thấy dữ liệu hoặc API chưa sẵn sàng."
+        : status >= 500
+          ? "Máy chủ đang gặp lỗi. Vui lòng thử lại sau."
+          : "Có lỗi xảy ra.";
     const apiMessage =
       error.response?.data?.error ||
       error.response?.data?.message ||
-      error.message ||
-      "Unexpected error";
+      fallbackMessage ||
+      error.message;
 
     if (status === 401) {
       clearAccessToken();

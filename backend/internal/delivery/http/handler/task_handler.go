@@ -44,9 +44,11 @@ func (h *TaskHandler) Create(c *fiber.Ctx) error {
 	result, err := h.taskUsecase.Create(c.UserContext(), userID, globalRole, projectID, usecase.CreateTaskInput{
 		Title:       req.Title,
 		Description: req.Description,
+		Priority:    req.Priority,
 		AssigneeID:  req.AssigneeID,
 		AssigneeIDs: req.AssigneeIDs,
 		Deadline:    req.Deadline.Value,
+		ReminderAt:  req.ReminderAt.Value,
 	})
 	if err != nil {
 		return utils.Error(c, projectErrorStatus(err), "create task failed", err.Error())
@@ -70,7 +72,11 @@ func (h *TaskHandler) ListByProject(c *fiber.Ctx) error {
 
 	page, pageSize := getPagination(c)
 
-	result, total, err := h.taskUsecase.ListByProject(c.UserContext(), userID, globalRole, projectID, page, pageSize)
+	result, total, err := h.taskUsecase.ListByProject(c.UserContext(), userID, globalRole, projectID, usecase.ListTasksByProjectInput{
+		ArchiveFilter: queryValue(c, "archive"),
+		Page:          page,
+		PageSize:      pageSize,
+	})
 	if err != nil {
 		return utils.Error(c, projectErrorStatus(err), "get tasks failed", err.Error())
 	}
@@ -236,6 +242,7 @@ func (h *TaskHandler) Update(c *fiber.Ctx) error {
 		Title:       req.Title,
 		Description: req.Description,
 		Status:      req.Status,
+		Priority:    req.Priority,
 		AssigneeID:  req.AssigneeID,
 		AssigneeIDs: usecase.OptionalUintSliceInput{
 			Set:    req.AssigneeIDs.Set,
@@ -244,6 +251,10 @@ func (h *TaskHandler) Update(c *fiber.Ctx) error {
 		Deadline: usecase.OptionalTimeInput{
 			Set:   req.Deadline.Set,
 			Value: req.Deadline.Value,
+		},
+		ReminderAt: usecase.OptionalTimeInput{
+			Set:   req.ReminderAt.Set,
+			Value: req.ReminderAt.Value,
 		},
 	})
 	if err != nil {
@@ -278,6 +289,48 @@ func (h *TaskHandler) Delete(c *fiber.Ctx) error {
 	h.broadcastTaskEvent("task.deleted", task.ProjectID, task.ID, userID, true)
 
 	return utils.Success(c, fiber.StatusOK, "delete task success", nil)
+}
+
+func (h *TaskHandler) Archive(c *fiber.Ctx) error {
+	userID, globalRole, err := getAuthContext(c)
+	if err != nil {
+		return utils.Error(c, fiber.StatusUnauthorized, "unauthorized", err.Error())
+	}
+
+	taskID, err := parseUintParam(c, "id")
+	if err != nil {
+		return utils.Error(c, fiber.StatusBadRequest, "invalid task id", err.Error())
+	}
+
+	result, err := h.taskUsecase.Archive(c.UserContext(), userID, globalRole, taskID)
+	if err != nil {
+		return utils.Error(c, projectErrorStatus(err), "archive task failed", err.Error())
+	}
+
+	h.broadcastTaskEvent("task.archived", result.ProjectID, result.ID, userID, true)
+
+	return utils.Success(c, fiber.StatusOK, "archive task success", taskResponse(result))
+}
+
+func (h *TaskHandler) Restore(c *fiber.Ctx) error {
+	userID, globalRole, err := getAuthContext(c)
+	if err != nil {
+		return utils.Error(c, fiber.StatusUnauthorized, "unauthorized", err.Error())
+	}
+
+	taskID, err := parseUintParam(c, "id")
+	if err != nil {
+		return utils.Error(c, fiber.StatusBadRequest, "invalid task id", err.Error())
+	}
+
+	result, err := h.taskUsecase.Restore(c.UserContext(), userID, globalRole, taskID)
+	if err != nil {
+		return utils.Error(c, projectErrorStatus(err), "restore task failed", err.Error())
+	}
+
+	h.broadcastTaskEvent("task.restored", result.ProjectID, result.ID, userID, true)
+
+	return utils.Success(c, fiber.StatusOK, "restore task success", taskResponse(result))
 }
 
 func (h *TaskHandler) broadcastTaskEvent(eventType string, projectID uint, taskID uint, triggeredBy uint, includeTaskRoom bool) {
@@ -316,9 +369,13 @@ func taskResponse(task *usecase.TaskOutput) fiber.Map {
 		"description":  task.Description,
 		"status":       task.Status,
 		"progress":     task.Progress,
+		"priority":     task.Priority,
 		"assignee_id":  task.AssigneeID,
 		"assignee_ids": assigneeIDs,
 		"deadline":     task.Deadline,
+		"reminder_at":  task.ReminderAt,
+		"archived_at":  task.ArchivedAt,
+		"archived_by":  task.ArchivedBy,
 		"created_by":   task.CreatedBy,
 		"created_at":   task.CreatedAt,
 		"updated_at":   task.UpdatedAt,

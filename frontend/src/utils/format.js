@@ -16,7 +16,15 @@ export function formatDate(value) {
 
 export function formatDeadline(value) {
   if (!value) {
-    return "Chưa có deadline";
+    return "Chưa có hạn chót";
+  }
+
+  return formatDate(value);
+}
+
+export function formatReminder(value) {
+  if (!value) {
+    return "Chưa có nhắc hạn";
   }
 
   return formatDate(value);
@@ -59,9 +67,9 @@ export function getDeadlineState(deadline, status) {
 
 export function formatDeadlineState(state) {
   const labels = {
-    none: "Chưa có deadline",
+    none: "Chưa có hạn chót",
     completed: "Đã hoàn thành",
-    invalid: "Deadline không hợp lệ",
+    invalid: "Hạn chót không hợp lệ",
     overdue: "Quá hạn",
     today: "Đến hạn hôm nay",
     soon: "Sắp đến hạn",
@@ -129,6 +137,22 @@ export function toTaskStatusInput(status) {
     return "in-progress";
   }
   return status || "todo";
+}
+
+export function normalizeTaskPriority(priority) {
+  return String(priority || "none").trim().toLowerCase() || "none";
+}
+
+export function formatTaskPriority(priority) {
+  const labels = {
+    none: "Không ưu tiên",
+    low: "Thấp",
+    medium: "Trung bình",
+    high: "Cao",
+    urgent: "Khẩn cấp"
+  };
+
+  return labels[normalizeTaskPriority(priority)] || priority || "Không rõ";
 }
 
 export function formatRoleLabel(role) {

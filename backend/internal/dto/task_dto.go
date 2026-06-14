@@ -97,16 +97,20 @@ func (input *OptionalUintSlice) UnmarshalJSON(data []byte) error {
 type CreateTaskRequest struct {
 	Title       string       `json:"title"`
 	Description string       `json:"description"`
+	Priority    string       `json:"priority"`
 	AssigneeID  *uint        `json:"assignee_id"`
 	AssigneeIDs []uint       `json:"assignee_ids"`
 	Deadline    OptionalTime `json:"deadline"`
+	ReminderAt  OptionalTime `json:"reminder_at"`
 }
 
 type UpdateTaskRequest struct {
 	Title       *string           `json:"title"`
 	Description *string           `json:"description"`
 	Status      *string           `json:"status"`
+	Priority    *string           `json:"priority"`
 	AssigneeID  *uint             `json:"assignee_id"`
 	AssigneeIDs OptionalUintSlice `json:"assignee_ids"`
 	Deadline    OptionalTime      `json:"deadline"`
+	ReminderAt  OptionalTime      `json:"reminder_at"`
 }

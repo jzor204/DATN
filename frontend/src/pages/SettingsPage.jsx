@@ -2,26 +2,18 @@ import { useEffect, useMemo, useState } from "react";
 import { getMe } from "../api/authApi";
 import AlertBanner from "../components/AlertBanner";
 import SectionCard from "../components/SectionCard";
-import { formatRoleLabel } from "../utils/format";
 import { getAccessToken } from "../utils/auth";
+import { formatRoleLabel } from "../utils/format";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8080/api/v1";
 const FRONTEND_URL = window.location.origin || "http://127.0.0.1:5173";
 
 const TABS = [
   { id: "account", label: "Tài khoản" },
-  { id: "security", label: "Bảo mật" },
+  { id: "access", label: "Quyền & phiên" },
   { id: "system", label: "Hệ thống" },
-  { id: "cache", label: "Cache" }
+  { id: "data", label: "Dữ liệu" }
 ];
-
-function getBackendRoot() {
-  return API_BASE_URL.replace(/\/api\/v1\/?$/i, "");
-}
-
-function getSwaggerUrl() {
-  return `${getBackendRoot()}/swagger/index.html`;
-}
 
 function decodeJwtPayload(token) {
   if (!token) {
@@ -58,6 +50,15 @@ function formatJwtTime(value) {
   }).format(date);
 }
 
+function getInitials(name = "") {
+  return String(name)
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("");
+}
+
 function getSessionStatus(claims) {
   if (!claims?.exp) {
     return {
@@ -78,17 +79,8 @@ function getSessionStatus(claims) {
   return {
     label: "Đang hoạt động",
     tone: "success",
-    description: "Phiên đăng nhập đang hoạt động."
+    description: "JWT hiện tại vẫn hợp lệ."
   };
-}
-
-function getInitials(name = "") {
-  return name
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part.charAt(0).toUpperCase())
-    .join("");
 }
 
 function StatusChip({ tone = "success", children }) {
@@ -169,10 +161,6 @@ export default function SettingsPage({ currentUser, onLogout }) {
     setMessageTone(tone);
   }
 
-  function handleOpen(url) {
-    window.open(url, "_blank", "noopener,noreferrer");
-  }
-
   async function handleReloadProfile() {
     setIsReloadingProfile(true);
     try {
@@ -190,9 +178,9 @@ export default function SettingsPage({ currentUser, onLogout }) {
     return (
       <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
         <SectionCard
-          title="Tài khoản"
-          eyebrow="Profile"
-          description="Thông tin đăng nhập hiện tại và vai trò của người dùng trong hệ thống."
+          title="Hồ sơ đăng nhập"
+          eyebrow="Tài khoản"
+          description="Thông tin này dùng để hiển thị avatar, phân quyền và ghi nhận hoạt động trong project."
           action={
             <ActionButton disabled={isReloadingProfile} onClick={handleReloadProfile} tone="primary">
               {isReloadingProfile ? "Đang tải..." : "Làm mới"}
@@ -200,7 +188,7 @@ export default function SettingsPage({ currentUser, onLogout }) {
           }
         >
           <div className="flex flex-col gap-5 md:flex-row md:items-center">
-            <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-slate-900 text-xl font-semibold text-white">
+            <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-xl font-semibold text-white">
               {getInitials(profile?.name) || "U"}
             </div>
             <div className="min-w-0 flex-1">
@@ -216,16 +204,16 @@ export default function SettingsPage({ currentUser, onLogout }) {
           </div>
 
           <div className="mt-6 grid gap-4 md:grid-cols-3">
-            <InfoTile label="Loại tài khoản" value={profile?.role === "admin" ? "Quản trị hệ thống" : "Thành viên"} />
-            <InfoTile label="Quyền project" value="Theo role trong project" />
-            <InfoTile chipTone={sessionStatus.tone} label="Session" value={sessionStatus.label} />
+            <InfoTile label="Vai trò hệ thống" value={formatRoleLabel(profile?.role)} />
+            <InfoTile label="Quyền project" value="Theo từng project" />
+            <InfoTile chipTone={sessionStatus.tone} label="Phiên đăng nhập" value={sessionStatus.label} />
           </div>
         </SectionCard>
 
-        <SectionCard title="Tac vu nhanh" eyebrow="Account">
+        <SectionCard title="Tác vụ nhanh" eyebrow="Tài khoản">
           <div className="space-y-3">
             <ActionButton className="w-full" disabled={isReloadingProfile} onClick={handleReloadProfile} tone="primary">
-              Tải lại thông tin
+              Tải lại hồ sơ
             </ActionButton>
             <ActionButton className="w-full" onClick={onLogout}>
               Đăng xuất
@@ -236,56 +224,47 @@ export default function SettingsPage({ currentUser, onLogout }) {
     );
   }
 
-  function renderSecurityTab() {
+  function renderAccessTab() {
     return (
       <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
-        <div className="space-y-6">
-          <SectionCard
-            title="Bảo mật"
-            eyebrow="Session"
-            description="Trạng thái phiên đăng nhập và các cơ chế bảo vệ đang được áp dụng."
-          >
-            <div className="grid gap-4 md:grid-cols-3">
-              <InfoTile chipTone={sessionStatus.tone} label="Trạng thái phiên" value={sessionStatus.label} />
-              <InfoTile label="Token hết hạn" value={formatJwtTime(claims?.exp)} />
-              <InfoTile label="Lưu trữ" value="Browser localStorage" />
-            </div>
+        <SectionCard
+          title="Phiên và phân quyền"
+          eyebrow="Bảo mật"
+          description="Project hiện dùng JWT, global role và role trong từng project để quyết định quyền thao tác."
+        >
+          <div className="grid gap-4 md:grid-cols-3">
+            <InfoTile chipTone={sessionStatus.tone} label="Trạng thái phiên" value={sessionStatus.label} />
+            <InfoTile label="Token hết hạn" value={formatJwtTime(claims?.exp)} />
+            <InfoTile label="Lưu token" value="Browser localStorage" />
+          </div>
 
-            <div className="mt-5 space-y-3">
-              <SettingRow
-                description="Frontend tự gắn Authorization header cho các request cần đăng nhập."
-                status="Đã bật"
-                title="JWT authentication"
-              />
-              <SettingRow
-                description="Các trang chính yêu cầu user phải đăng nhập trước khi truy cập."
-                status="Đã bật"
-                title="Protected routes"
-              />
-              <SettingRow
-                description="Chưa nằm trong phạm vi hiện tại của project."
-                status="Chưa thêm"
-                title="Refresh token"
-                tone="muted"
-              />
-            </div>
-          </SectionCard>
+          <div className="mt-5 space-y-3">
+            <SettingRow
+              description="Các trang project, task, thành viên và cài đặt đều yêu cầu đăng nhập."
+              status="Đã bật"
+              title="Protected routes"
+            />
+            <SettingRow
+              description="Owner/quản trị project duyệt yêu cầu thay đổi từ member."
+              status="Đã có"
+              title="Luồng yêu cầu thay đổi"
+              tone="info"
+            />
+            <SettingRow
+              description="Member nên thao tác qua checklist, bình luận hoặc gửi yêu cầu thay đổi."
+              status="Đang áp dụng"
+              title="Quyền member"
+              tone="muted"
+            />
+          </div>
+        </SectionCard>
 
-          <SectionCard title="Phân quyền" eyebrow="Authorization">
-            <div className="grid gap-4 md:grid-cols-3">
-              <InfoTile label="Global roles" value="admin, member" />
-              <InfoTile label="Project roles" value="owner, admin, member" />
-              <InfoTile label="Task member" value="Cập nhật status được assign" />
-            </div>
-          </SectionCard>
-        </div>
-
-        <SectionCard title="Công cụ phiên đăng nhập" eyebrow="Account">
+        <SectionCard title="Đăng xuất" eyebrow="Phiên hiện tại">
           <p className="mb-4 text-sm text-slate-600">
-            Đăng xuất sẽ xóa JWT khỏi trình duyệt và đưa user về màn hình login.
+            Đăng xuất sẽ xóa JWT khỏi trình duyệt và đưa bạn về màn hình đăng nhập.
           </p>
           <ActionButton className="w-full" onClick={onLogout} tone="danger">
-            Đăng xuất khỏi phiên hiện tại
+            Đăng xuất khỏi phiên này
           </ActionButton>
         </SectionCard>
       </div>
@@ -295,111 +274,104 @@ export default function SettingsPage({ currentUser, onLogout }) {
   function renderSystemTab() {
     return (
       <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
-        <div className="space-y-6">
-          <SectionCard
-            title="Hệ thống"
-            eyebrow="Environment"
-            description="Thông tin kết nối chính dùng cho demo frontend, backend API và Swagger."
-          >
-            <div className="grid gap-4 md:grid-cols-3">
-              <InfoTile label="Frontend" value={FRONTEND_URL} />
-              <InfoTile label="Backend API" value={API_BASE_URL} />
-              <InfoTile label="Swagger" value="/swagger/index.html" />
-            </div>
+        <SectionCard
+          title="Kết nối ứng dụng"
+          eyebrow="Hệ thống"
+          description="Các endpoint chính đang được frontend sử dụng trong môi trường hiện tại."
+        >
+          <div className="grid gap-4 md:grid-cols-3">
+            <InfoTile label="Frontend" value={FRONTEND_URL} />
+            <InfoTile label="Backend API" value={API_BASE_URL} />
+            <InfoTile label="Realtime" value="WebSocket theo scope" />
+          </div>
 
-            <div className="mt-5 flex flex-wrap gap-2">
-              <ActionButton onClick={() => handleOpen(getSwaggerUrl())} tone="primary">
-                Mở Swagger
-              </ActionButton>
-              <ActionButton onClick={() => handleOpen(API_BASE_URL.replace(/\/api\/v1\/?$/i, "/swagger/index.html"))}>
-                Tài liệu API
-              </ActionButton>
-            </div>
-          </SectionCard>
+          <div className="mt-5 space-y-3">
+            <SettingRow
+              description="Project, task, comment, checklist và thông báo đều có event realtime."
+              status="Đã bật"
+              title="Realtime updates"
+            />
+            <SettingRow
+              description="Nút Sáng/Tối trên thanh trên cùng lưu lựa chọn vào trình duyệt."
+              status="Đã bật"
+              title="Giao diện tối"
+              tone="info"
+            />
+            <SettingRow
+              description="Header search tìm project, task và thành viên trong workspace."
+              status="Đang dùng"
+              title="Tìm kiếm nhanh"
+            />
+          </div>
+        </SectionCard>
 
-          <SectionCard title="Realtime" eyebrow="WebSocket">
-            <div className="space-y-3">
-              <SettingRow
-                description="Frontend đang nhận event và tải lại dữ liệu khi project, task hoặc comment thay đổi."
-                status="Đã kết nối"
-                title="Cập nhật realtime"
-              />
-              <SettingRow
-                description="Hỗ trợ các scope projects, project và task cho demo nhiều tab."
-                status="Đã bật"
-                title="WebSocket scopes"
-              />
-              <SettingRow
-                description="Realtime hub hiện tại phù hợp demo với một backend instance."
-                status="MVP"
-                title="Chế độ realtime"
-                tone="info"
-              />
-            </div>
-          </SectionCard>
-        </div>
-
-        <SectionCard title="Backend stack" eyebrow="Docker">
+        <SectionCard title="Trạng thái demo" eyebrow="Môi trường">
           <div className="space-y-3">
-            <SettingRow description="Cơ sở dữ liệu ứng dụng." status="Đang chạy" title="MySQL" />
-            <SettingRow description="Cache cho profile user." status="Đang chạy" title="Redis" />
             <SettingRow description="REST API bằng Golang Fiber." status="Đang chạy" title="API service" />
+            <SettingRow description="Cơ sở dữ liệu chính của ứng dụng." status="Đang dùng" title="MySQL" />
+            <SettingRow description="Cache profile và dữ liệu task/project." status="Đang dùng" title="Redis" />
           </div>
         </SectionCard>
       </div>
     );
   }
 
-  function renderCacheTab() {
+  function renderDataTab() {
     return (
       <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
         <SectionCard
-          title="Redis Cache"
-          eyebrow="Cache"
-          description="Thông tin cache được rút gọn để phục vụ demo. Chi tiết flow nên đưa vào báo cáo."
-          action={
-            <ActionButton disabled={isReloadingProfile} onClick={handleReloadProfile} tone="primary">
-              {isReloadingProfile ? "Đang test..." : "Test /auth/me"}
-            </ActionButton>
-          }
+          title="Dữ liệu công việc"
+          eyebrow="Task data"
+          description="Các cơ chế dữ liệu đã thêm để project gần hơn với luồng quản lý công việc thật."
         >
-          <div className="grid gap-4 md:grid-cols-4">
-            <InfoTile chipTone="success" label="Trạng thái" value="Đã bật" />
-            <InfoTile label="Được dùng bởi" value="/auth/me" />
-            <InfoTile label="TTL" value="5 phút" />
-            <InfoTile label="Đối tượng cache" value="User profile" />
+          <div className="grid gap-4 md:grid-cols-3">
+            <InfoTile label="Checklist" value="Tính tiến độ tự động" />
+            <InfoTile label="Nhãn/đính kèm" value="Metadata của task" />
+            <InfoTile label="Lưu trữ/xóa mềm" value="Ẩn khỏi luồng chính" />
           </div>
 
-          <p className="mt-5 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-            Khi frontend gọi /auth/me, backend ưu tiên lấy profile từ Redis. Nếu cache miss, backend đọc MySQL
-            và ghi lại Redis với TTL 5 phút.
-          </p>
+          <div className="mt-5 space-y-3">
+            <SettingRow
+              description="Task đã lưu trữ được ẩn khỏi board mặc định và có thể lọc lại khi cần."
+              status="Đã có"
+              title="Archive"
+              tone="info"
+            />
+            <SettingRow
+              description="Xóa mềm giữ dữ liệu trong database để tránh mất dữ liệu đột ngột."
+              status="Đã có"
+              title="Soft delete"
+            />
+            <SettingRow
+              description="Redis cache được xóa theo project/task sau các thao tác thay đổi."
+              status="Đang áp dụng"
+              title="Cache invalidation"
+            />
+          </div>
         </SectionCard>
 
-        <SectionCard title="Demo cache" eyebrow="Redis">
-          <p className="mb-4 text-sm text-slate-600">
-            Nút này gọi lại /auth/me để kiểm tra luồng lấy profile. UI không hiện Redis key chi tiết để tránh làm
-            màn hình quá kỹ thuật.
-          </p>
-          <ActionButton className="w-full" disabled={isReloadingProfile} onClick={handleReloadProfile} tone="primary">
-            {isReloadingProfile ? "Đang gọi API..." : "Gọi /auth/me"}
-          </ActionButton>
+        <SectionCard title="Gợi ý vận hành" eyebrow="Quy ước">
+          <div className="space-y-3 text-sm text-slate-600">
+            <p>Lưu trữ dùng cho task không còn xuất hiện trên board nhưng vẫn cần giữ lại lịch sử.</p>
+            <p>Xóa mềm dùng khi task sai hoặc không còn cần quản lý trong giao diện.</p>
+            <p>Checklist là nguồn chính để tính phần trăm tiến độ, thay vì nhập tay.</p>
+          </div>
         </SectionCard>
       </div>
     );
   }
 
   function renderActiveTab() {
-    if (activeTab === "security") {
-      return renderSecurityTab();
+    if (activeTab === "access") {
+      return renderAccessTab();
     }
 
     if (activeTab === "system") {
       return renderSystemTab();
     }
 
-    if (activeTab === "cache") {
-      return renderCacheTab();
+    if (activeTab === "data") {
+      return renderDataTab();
     }
 
     return renderAccountTab();
@@ -410,7 +382,7 @@ export default function SettingsPage({ currentUser, onLogout }) {
       <div>
         <h1 className="text-2xl font-semibold text-ink">Cài đặt</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Quản lý tài khoản, bảo mật phiên đăng nhập và thông tin hệ thống phục vụ demo.
+          Kiểm tra tài khoản, phiên đăng nhập và các cơ chế chính đang dùng trong project.
         </p>
       </div>
 

@@ -24,9 +24,11 @@ type TaskUsecase struct {
 type CreateTaskInput struct {
 	Title       string
 	Description string
+	Priority    string
 	AssigneeID  *uint
 	AssigneeIDs []uint
 	Deadline    *time.Time
+	ReminderAt  *time.Time
 }
 
 type OptionalTimeInput struct {
@@ -38,9 +40,11 @@ type UpdateTaskInput struct {
 	Title       *string
 	Description *string
 	Status      *string
+	Priority    *string
 	AssigneeID  *uint
 	AssigneeIDs OptionalUintSliceInput
 	Deadline    OptionalTimeInput
+	ReminderAt  OptionalTimeInput
 }
 
 type OptionalUintSliceInput struct {
@@ -56,12 +60,24 @@ type TaskOutput struct {
 	Description string     `json:"description"`
 	Status      string     `json:"status"`
 	Progress    int        `json:"progress"`
+	Priority    string     `json:"priority"`
 	AssigneeID  *uint      `json:"assignee_id"`
 	Assignees   []uint     `json:"assignee_ids"`
 	Deadline    *time.Time `json:"deadline"`
+	ReminderAt  *time.Time `json:"reminder_at"`
+	ArchivedAt  *time.Time `json:"archived_at"`
+	ArchivedBy  *uint      `json:"archived_by"`
+	DeletedAt   *time.Time `json:"deleted_at,omitempty"`
+	DeletedBy   *uint      `json:"deleted_by,omitempty"`
 	CreatedBy   uint       `json:"created_by"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
+}
+
+type ListTasksByProjectInput struct {
+	ArchiveFilter string
+	Page          int
+	PageSize      int
 }
 
 type ListMyTasksInput struct {
@@ -121,6 +137,13 @@ func (uc *TaskUsecase) Create(
 	if title == "" {
 		return nil, errors.New("task title is required")
 	}
+	priority := normalizeTaskPriority(input.Priority)
+	if !isValidTaskPriority(priority) {
+		return nil, errors.New("invalid task priority")
+	}
+	if err := validateReminder(input.Deadline, input.ReminderAt); err != nil {
+		return nil, err
+	}
 
 	assigneeIDs := normalizeAssigneeIDs(input.AssigneeIDs)
 	if len(assigneeIDs) == 0 && input.AssigneeID != nil {
@@ -141,9 +164,11 @@ func (uc *TaskUsecase) Create(
 		Description: description,
 		Status:      domain.TaskStatusTodo,
 		Progress:    0,
+		Priority:    priority,
 		AssigneeID:  primaryAssigneeID,
 		AssigneeIDs: assigneeIDs,
 		Deadline:    input.Deadline,
+		ReminderAt:  input.ReminderAt,
 		CreatedBy:   actorID,
 	}
 
@@ -156,6 +181,8 @@ func (uc *TaskUsecase) Create(
 		"title":        task.Title,
 		"assignee_ids": task.AssigneeIDs,
 		"deadline":     task.Deadline,
+		"reminder_at":  task.ReminderAt,
+		"priority":     task.Priority,
 	})
 
 	return toTaskOutput(task), nil
@@ -166,8 +193,7 @@ func (uc *TaskUsecase) ListByProject(
 	actorID uint,
 	globalRole string,
 	projectID uint,
-	page int,
-	pageSize int,
+	input ListTasksByProjectInput,
 ) ([]TaskOutput, int64, error) {
 	project, err := uc.projectRepo.GetByID(ctx, projectID)
 	if err != nil {
@@ -181,15 +207,16 @@ func (uc *TaskUsecase) ListByProject(
 		return nil, 0, err
 	}
 
-	page, pageSize = normalizePagination(page, pageSize)
-	cacheKey := fmt.Sprintf("project:%d:tasks:page:%d:size:%d", projectID, page, pageSize)
+	page, pageSize := normalizePagination(input.Page, input.PageSize)
+	archiveFilter := normalizeArchiveFilter(input.ArchiveFilter)
+	cacheKey := fmt.Sprintf("project:%d:tasks:archive:%s:page:%d:size:%d", projectID, archiveFilter, page, pageSize)
 
 	var cached taskListCacheEntry
 	if getCachedJSON(ctx, uc.cacheService, cacheKey, &cached) {
 		return cached.Data, cached.Total, nil
 	}
 
-	tasks, total, err := uc.taskRepo.ListByProject(ctx, projectID, page, pageSize)
+	tasks, total, err := uc.taskRepo.ListByProject(ctx, projectID, archiveFilter, page, pageSize)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -205,6 +232,84 @@ func (uc *TaskUsecase) ListByProject(
 	}, readCacheTTL)
 
 	return result, total, nil
+}
+
+func (uc *TaskUsecase) Archive(
+	ctx context.Context,
+	actorID uint,
+	globalRole string,
+	taskID uint,
+) (*TaskOutput, error) {
+	task, err := uc.taskRepo.GetByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if task == nil {
+		return nil, errors.New("task not found")
+	}
+
+	if err := uc.accessService.CanManageProject(ctx, task.ProjectID, actorID, globalRole); err != nil {
+		return nil, err
+	}
+
+	if task.ArchivedAt == nil {
+		if err := uc.taskRepo.Archive(ctx, taskID, actorID); err != nil {
+			return nil, err
+		}
+		uc.invalidateTaskCaches(ctx, taskID, task.ProjectID)
+		uc.recordActivity(ctx, actorID, domain.ActivityTypeTaskArchived, fmt.Sprintf("Đã lưu trữ task \"%s\".", task.Title), task, map[string]interface{}{
+			"title": task.Title,
+		})
+	}
+
+	refreshed, err := uc.taskRepo.GetByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if refreshed == nil {
+		return nil, errors.New("task not found")
+	}
+
+	return toTaskOutput(refreshed), nil
+}
+
+func (uc *TaskUsecase) Restore(
+	ctx context.Context,
+	actorID uint,
+	globalRole string,
+	taskID uint,
+) (*TaskOutput, error) {
+	task, err := uc.taskRepo.GetByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if task == nil {
+		return nil, errors.New("task not found")
+	}
+
+	if err := uc.accessService.CanManageProject(ctx, task.ProjectID, actorID, globalRole); err != nil {
+		return nil, err
+	}
+
+	if task.ArchivedAt != nil {
+		if err := uc.taskRepo.Restore(ctx, taskID); err != nil {
+			return nil, err
+		}
+		uc.invalidateTaskCaches(ctx, taskID, task.ProjectID)
+		uc.recordActivity(ctx, actorID, domain.ActivityTypeTaskRestored, fmt.Sprintf("Đã khôi phục task \"%s\".", task.Title), task, map[string]interface{}{
+			"title": task.Title,
+		})
+	}
+
+	refreshed, err := uc.taskRepo.GetByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if refreshed == nil {
+		return nil, errors.New("task not found")
+	}
+
+	return toTaskOutput(refreshed), nil
 }
 
 func (uc *TaskUsecase) ListAssignedToUser(
@@ -353,7 +458,7 @@ func (uc *TaskUsecase) Update(
 			return nil, errors.New("forbidden: you can only update tasks assigned to you")
 		}
 
-		if input.Title != nil || input.Description != nil || input.AssigneeID != nil || input.AssigneeIDs.Set || input.Deadline.Set {
+		if input.Title != nil || input.Description != nil || input.Priority != nil || input.AssigneeID != nil || input.AssigneeIDs.Set || input.Deadline.Set || input.ReminderAt.Set {
 			return nil, errors.New("forbidden: member can only update task status")
 		}
 
@@ -397,6 +502,14 @@ func (uc *TaskUsecase) Update(
 		task.Status = status
 	}
 
+	if input.Priority != nil {
+		priority := normalizeTaskPriority(*input.Priority)
+		if !isValidTaskPriority(priority) {
+			return nil, errors.New("invalid task priority")
+		}
+		task.Priority = priority
+	}
+
 	if input.AssigneeID != nil {
 		if err := uc.validateAssignees(ctx, task.ProjectID, []uint{*input.AssigneeID}); err != nil {
 			return nil, err
@@ -420,6 +533,17 @@ func (uc *TaskUsecase) Update(
 
 	if input.Deadline.Set {
 		task.Deadline = input.Deadline.Value
+		if task.Deadline == nil {
+			task.ReminderAt = nil
+		}
+	}
+
+	if input.ReminderAt.Set {
+		task.ReminderAt = input.ReminderAt.Value
+	}
+
+	if err := validateReminder(task.Deadline, task.ReminderAt); err != nil {
+		return nil, err
 	}
 
 	if err := uc.taskRepo.Update(ctx, task); err != nil {
@@ -454,7 +578,7 @@ func (uc *TaskUsecase) Delete(
 		"title": task.Title,
 	})
 
-	if err := uc.taskRepo.Delete(ctx, taskID); err != nil {
+	if err := uc.taskRepo.Delete(ctx, taskID, actorID); err != nil {
 		return err
 	}
 
@@ -539,6 +663,18 @@ func taskChangePayload(previous *domain.Task, current *domain.Task) map[string]i
 			"to":   current.Deadline,
 		}
 	}
+	if !sameTimePointer(previous.ReminderAt, current.ReminderAt) {
+		payload["reminder_at"] = map[string]interface{}{
+			"from": previous.ReminderAt,
+			"to":   current.ReminderAt,
+		}
+	}
+	if previous.Priority != current.Priority {
+		payload["priority"] = map[string]interface{}{
+			"from": previous.Priority,
+			"to":   current.Priority,
+		}
+	}
 
 	return payload
 }
@@ -556,12 +692,28 @@ func toTaskOutput(task *domain.Task) *TaskOutput {
 		Description: task.Description,
 		Status:      task.Status,
 		Progress:    task.Progress,
+		Priority:    normalizeTaskPriority(task.Priority),
 		AssigneeID:  task.AssigneeID,
 		Assignees:   assigneeIDs,
 		Deadline:    task.Deadline,
+		ReminderAt:  task.ReminderAt,
+		ArchivedAt:  task.ArchivedAt,
+		ArchivedBy:  task.ArchivedBy,
+		DeletedAt:   task.DeletedAt,
+		DeletedBy:   task.DeletedBy,
 		CreatedBy:   task.CreatedBy,
 		CreatedAt:   task.CreatedAt,
 		UpdatedAt:   task.UpdatedAt,
+	}
+}
+
+func normalizeArchiveFilter(filter string) string {
+	filter = strings.ToLower(strings.TrimSpace(filter))
+	switch filter {
+	case domain.TaskArchiveFilterArchived, domain.TaskArchiveFilterAll:
+		return filter
+	default:
+		return domain.TaskArchiveFilterActive
 	}
 }
 
@@ -577,6 +729,35 @@ func isValidTaskStatus(status string) bool {
 	return status == domain.TaskStatusTodo ||
 		status == domain.TaskStatusInProgress ||
 		status == domain.TaskStatusDone
+}
+
+func normalizeTaskPriority(priority string) string {
+	priority = strings.ToLower(strings.TrimSpace(priority))
+	if priority == "" {
+		return domain.TaskPriorityNone
+	}
+	return priority
+}
+
+func isValidTaskPriority(priority string) bool {
+	return priority == domain.TaskPriorityNone ||
+		priority == domain.TaskPriorityLow ||
+		priority == domain.TaskPriorityMedium ||
+		priority == domain.TaskPriorityHigh ||
+		priority == domain.TaskPriorityUrgent
+}
+
+func validateReminder(deadline *time.Time, reminderAt *time.Time) error {
+	if reminderAt == nil {
+		return nil
+	}
+	if deadline == nil {
+		return errors.New("deadline is required before setting reminder")
+	}
+	if reminderAt.After(*deadline) {
+		return errors.New("reminder must be before deadline")
+	}
+	return nil
 }
 
 func (uc *TaskUsecase) validateAssignees(ctx context.Context, projectID uint, userIDs []uint) error {

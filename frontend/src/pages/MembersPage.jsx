@@ -12,6 +12,7 @@ import SectionCard from "../components/SectionCard";
 import { useHashRoute } from "../hooks/useHashRoute";
 import { useRealtimeSubscription } from "../hooks/useRealtimeSubscription";
 import { formatDate, formatRoleLabel } from "../utils/format";
+import { navigateTo } from "../utils/router";
 
 const roleRank = {
   owner: 3,
@@ -25,6 +26,46 @@ const initialAddForm = {
   role_in_project: "member"
 };
 
+const avatarTones = [
+  "bg-emerald-500",
+  "bg-sky-500",
+  "bg-orange-500",
+  "bg-violet-500",
+  "bg-rose-500",
+  "bg-teal-500"
+];
+
+function getInitials(name = "", fallback = "U") {
+  const initials = String(name)
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("");
+
+  return initials || fallback;
+}
+
+function Avatar({ member, size = "md" }) {
+  const tone = avatarTones[Number(member.user_id || member.id || 0) % avatarTones.length];
+  const sizes = {
+    sm: "h-8 w-8 text-xs",
+    md: "h-11 w-11 text-sm",
+    lg: "h-14 w-14 text-base"
+  };
+
+  return (
+    <div
+      className={`flex shrink-0 items-center justify-center rounded-full border-2 border-white font-bold text-white shadow-sm ${
+        sizes[size] || sizes.md
+      } ${tone}`}
+      title={member.name}
+    >
+      {getInitials(member.name, `#${member.user_id}`)}
+    </div>
+  );
+}
+
 function RoleChip({ role }) {
   const tone =
     role === "owner" || role === "admin-global"
@@ -34,8 +75,8 @@ function RoleChip({ role }) {
         : "bg-slate-100 text-slate-700";
 
   return (
-    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${tone}`}>
-      {role === "admin-global" ? "Quản trị" : formatRoleLabel(role)}
+    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${tone}`}>
+      {role === "admin-global" ? "Quản trị hệ thống" : formatRoleLabel(role)}
     </span>
   );
 }
@@ -206,7 +247,7 @@ export default function MembersPage({ currentUser }) {
         }
 
         setCandidates(nextCandidates);
-        setCandidateMessage(nextCandidates.length === 0 ? "Không tìm thấy user có thể thêm." : "");
+        setCandidateMessage(nextCandidates.length === 0 ? "Không tìm thấy người dùng có thể thêm." : "");
         setAddForm((prev) => {
           const selectedStillAvailable = nextCandidates.some(
             (candidate) => Number(candidate.user_id) === Number(prev.user_id)
@@ -243,7 +284,7 @@ export default function MembersPage({ currentUser }) {
         member.email?.toLowerCase().includes(keyword) ||
         String(member.user_id).includes(keyword);
 
-      const matchesRole = roleFilter === "all" || member.global_role === roleFilter;
+      const matchesRole = roleFilter === "all" || member.global_role === roleFilter || member.highest_role === roleFilter;
       const matchesProject =
         projectFilter === "all" ||
         member.projects.some((project) => Number(project.id) === Number(projectFilter));
@@ -256,15 +297,16 @@ export default function MembersPage({ currentUser }) {
     return members.reduce(
       (acc, member) => {
         acc.total += 1;
-        if (member.global_role === "admin") {
-          acc.admin += 1;
-        } else {
-          acc.member += 1;
-        }
         acc.projectRoles += member.projects.length;
+        if (member.global_role === "admin") {
+          acc.systemAdmins += 1;
+        }
+        if (member.highest_role === "owner" || member.highest_role === "admin") {
+          acc.projectManagers += 1;
+        }
         return acc;
       },
-      { total: 0, admin: 0, member: 0, projectRoles: 0 }
+      { total: 0, systemAdmins: 0, projectManagers: 0, projectRoles: 0 }
     );
   }, [members]);
 
@@ -281,6 +323,7 @@ export default function MembersPage({ currentUser }) {
 
       setAddMessage("Thêm thành viên thành công.");
       setAddForm((prev) => ({ ...prev, user_id: "" }));
+      setCandidateSearch("");
       setRefreshKey((prev) => prev + 1);
     } catch (err) {
       setAddMessage(err.message);
@@ -314,11 +357,11 @@ export default function MembersPage({ currentUser }) {
         <div>
           <h1 className="text-2xl font-semibold text-ink">Thành viên</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Tổng hợp thành viên từ các project bạn có quyền truy cập.
+            Quản lý người tham gia các project, vai trò và quyền thao tác trong từng project.
           </p>
         </div>
         <button
-          className="rounded-md bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
+          className="rounded-md border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-blue-400 hover:text-blue-700"
           onClick={() => setRefreshKey((prev) => prev + 1)}
           type="button"
         >
@@ -327,21 +370,25 @@ export default function MembersPage({ currentUser }) {
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
-        <MetricCard label="Tổng thành viên" value={metrics.total} />
-        <MetricCard label="Admin" value={metrics.admin} />
-        <MetricCard label="Member" value={metrics.member} />
-        <MetricCard label="Project roles" value={metrics.projectRoles} hint="Trên các project hiển thị" />
+        <MetricCard label="Thành viên" value={metrics.total} />
+        <MetricCard label="Quản trị hệ thống" value={metrics.systemAdmins} />
+        <MetricCard label="Quản lý project" value={metrics.projectManagers} hint="Owner hoặc quản trị project" />
+        <MetricCard label="Lượt tham gia" value={metrics.projectRoles} hint="Tổng vai trò trong các project" />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
-        <SectionCard title="Danh sách thành viên" eyebrow="Danh bạ">
+        <SectionCard
+          title="Danh bạ project"
+          eyebrow="Thành viên"
+          description="Mỗi người có thể tham gia nhiều project với vai trò khác nhau."
+        >
           <AlertBanner message={pageError} />
 
           <div className="mb-4 grid gap-3 lg:grid-cols-[1fr_180px_220px]">
             <input
               className="rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Tìm theo tên, email, user ID"
+              placeholder="Tìm theo tên, email hoặc user ID"
               value={search}
             />
             <select
@@ -351,6 +398,7 @@ export default function MembersPage({ currentUser }) {
             >
               <option value="all">Tất cả vai trò</option>
               <option value="admin">Quản trị</option>
+              <option value="owner">Chủ sở hữu</option>
               <option value="member">Thành viên</option>
             </select>
             <select
@@ -358,7 +406,7 @@ export default function MembersPage({ currentUser }) {
               onChange={(event) => setProjectFilter(event.target.value)}
               value={projectFilter}
             >
-              <option value="all">Tất cả dự án</option>
+              <option value="all">Tất cả project</option>
               {projects.map((project) => (
                 <option key={project.id} value={project.id}>
                   {project.name}
@@ -377,44 +425,58 @@ export default function MembersPage({ currentUser }) {
           ) : null}
 
           {!loading && filteredMembers.length > 0 ? (
-            <div className="overflow-hidden rounded-lg border border-slate-200">
-              <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-                <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-4 py-3">Thành viên</th>
-                    <th className="px-4 py-3">Global role</th>
-                    <th className="px-4 py-3">Dự án tham gia</th>
-                    <th className="px-4 py-3">Vai trò cao nhất</th>
-                    <th className="px-4 py-3">User ID</th>
-                    <th className="px-4 py-3">Cập nhật lúc</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 bg-white">
-                  {filteredMembers.map((member) => (
-                    <tr className="transition hover:bg-slate-50" key={member.user_id}>
-                      <td className="px-4 py-4">
-                        <div className="font-semibold text-ink">{member.name}</div>
-                        <div className="mt-1 text-xs text-slate-500">{member.email}</div>
-                      </td>
-                      <td className="px-4 py-4">
-                        <RoleChip role={member.global_role === "admin" ? "admin-global" : "member"} />
-                      </td>
-                      <td className="px-4 py-4 text-slate-600">{member.projects.length}</td>
-                      <td className="px-4 py-4">
-                        <RoleChip role={member.highest_role} />
-                      </td>
-                      <td className="px-4 py-4 text-slate-600">#{member.user_id}</td>
-                      <td className="px-4 py-4 text-slate-600">{formatDate(member.updated_at)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="grid gap-3">
+              {filteredMembers.map((member) => (
+                <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-panel" key={member.user_id}>
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="flex min-w-0 gap-3">
+                      <Avatar member={member} />
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="truncate text-base font-semibold text-ink">{member.name}</h3>
+                          <RoleChip role={member.global_role === "admin" ? "admin-global" : "member"} />
+                          <RoleChip role={member.highest_role} />
+                        </div>
+                        <p className="mt-1 truncate text-sm text-slate-500">{member.email}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          User #{member.user_id} · Cập nhật {formatDate(member.updated_at)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      className="rounded-md border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-blue-400 hover:text-blue-700"
+                      onClick={() => navigateTo(`/members?search=${encodeURIComponent(member.email || member.name)}`)}
+                      type="button"
+                    >
+                      Xem
+                    </button>
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {member.projects.map((project) => (
+                      <button
+                        className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:border-blue-300 hover:text-blue-700"
+                        key={`${member.user_id}-${project.id}`}
+                        onClick={() => navigateTo(`/projects/${project.id}`)}
+                        type="button"
+                      >
+                        {project.name} · {formatRoleLabel(project.role)}
+                      </button>
+                    ))}
+                  </div>
+                </article>
+              ))}
             </div>
           ) : null}
         </SectionCard>
 
         <div className="space-y-6">
-          <SectionCard title="Thêm thành viên" eyebrow="Project access">
+          <SectionCard
+            title="Thêm vào project"
+            eyebrow="Phân quyền"
+            description="Chọn project trước, sau đó tìm người dùng chưa có trong project đó."
+          >
             <form className="space-y-4" onSubmit={handleAddMember}>
               <AlertBanner
                 message={addMessage}
@@ -422,7 +484,7 @@ export default function MembersPage({ currentUser }) {
               />
 
               <label className="block space-y-2">
-                <span className="text-sm font-semibold text-slate-700">Dự án</span>
+                <span className="text-sm font-semibold text-slate-700">Project</span>
                 <select
                   className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                   onChange={(event) => handleAddProjectChange(event.target.value)}
@@ -438,11 +500,11 @@ export default function MembersPage({ currentUser }) {
               </label>
 
               <label className="block space-y-2">
-                <span className="text-sm font-semibold text-slate-700">Tìm user</span>
+                <span className="text-sm font-semibold text-slate-700">Tìm thành viên</span>
                 <input
                   className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                   onChange={(event) => setCandidateSearch(event.target.value)}
-                  placeholder="Name, email, or user ID"
+                  placeholder="Tên, email hoặc user ID"
                   value={candidateSearch}
                 />
               </label>
@@ -457,7 +519,7 @@ export default function MembersPage({ currentUser }) {
                   value={addForm.user_id}
                 >
                   <option value="">
-                    {candidateLoading ? "Đang tải users..." : "Chọn user để thêm"}
+                    {candidateLoading ? "Đang tải người dùng..." : "Chọn người dùng để thêm"}
                   </option>
                   {candidates.map((candidate) => (
                     <option key={candidate.user_id} value={candidate.user_id}>
@@ -471,7 +533,7 @@ export default function MembersPage({ currentUser }) {
               </label>
 
               <label className="block space-y-2">
-                <span className="text-sm font-semibold text-slate-700">Role</span>
+                <span className="text-sm font-semibold text-slate-700">Vai trò trong project</span>
                 <select
                   className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                   onChange={(event) =>
@@ -480,7 +542,7 @@ export default function MembersPage({ currentUser }) {
                   value={addForm.role_in_project}
                 >
                   <option value="member">Thành viên</option>
-                  <option value="admin">Quản trị</option>
+                  <option value="admin">Quản trị project</option>
                 </select>
               </label>
 
@@ -489,15 +551,15 @@ export default function MembersPage({ currentUser }) {
                 disabled={adding || projects.length === 0 || !addForm.user_id}
                 type="submit"
               >
-                {adding ? "Đang thêm..." : "Thêm"}
+                {adding ? "Đang thêm..." : "Thêm thành viên"}
               </button>
             </form>
           </SectionCard>
 
-          <SectionCard title="Ghi chú API" eyebrow="Backend">
+          <SectionCard title="Quyền thao tác" eyebrow="Gợi ý">
             <div className="space-y-3 text-sm text-slate-600">
-              <p>Backend gọi `/tasks/me?status=candidates&project_id=...` để tìm user có thể thêm.</p>
-              <p>Màn hình này tổng hợp dữ liệu từ `/projects` và `/projects/:id/members`.</p>
+              <p>Owner và quản trị project có thể duyệt yêu cầu thay đổi, chỉnh sửa task và quản lý thành viên.</p>
+              <p>Member nên cập nhật tiến độ qua checklist, bình luận và gửi yêu cầu thay đổi khi cần chỉnh thông tin task.</p>
             </div>
           </SectionCard>
         </div>

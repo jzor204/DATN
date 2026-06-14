@@ -14,6 +14,7 @@ func NewRouter(
 	taskHandler *handler.TaskHandler,
 	commentHandler *handler.CommentHandler,
 	checklistItemHandler *handler.ChecklistItemHandler,
+	taskMetadataHandler *handler.TaskMetadataHandler,
 	activityHandler *handler.ActivityHandler,
 	notificationHandler *handler.NotificationHandler,
 	changeRequestHandler *handler.ChangeRequestHandler,
@@ -67,11 +68,23 @@ func NewRouter(
 	tasks.Get("/:id/activities", activityHandler.ListByTask)
 	tasks.Get("/:id/change-requests", changeRequestHandler.ListByTask)
 	tasks.Post("/:id/change-requests", changeRequestHandler.CreateForTask)
+	tasks.Get("/:id/labels", taskMetadataHandler.ListLabelsByTask)
+	tasks.Post("/:id/labels", taskMetadataHandler.CreateLabel)
+	tasks.Get("/:id/task-labels", taskMetadataHandler.ListLabelsByTask)
+	tasks.Post("/:id/task-labels", taskMetadataHandler.CreateLabel)
+	tasks.Get("/:id/attachments", taskMetadataHandler.ListAttachmentsByTask)
+	tasks.Post("/:id/attachments", taskMetadataHandler.CreateAttachment)
+	tasks.Get("/:id/task-attachments", taskMetadataHandler.ListAttachmentsByTask)
+	tasks.Post("/:id/task-attachments", taskMetadataHandler.CreateAttachment)
 	tasks.Get("/:id/checklist", checklistItemHandler.ListByTask)
 	tasks.Post("/:id/checklist", checklistItemHandler.CreateChecklist)
 	tasks.Get("/:id/checklists", checklistItemHandler.ListByTask)
 	tasks.Post("/:id/checklists", checklistItemHandler.CreateChecklist)
 	tasks.Get("/:id/assignees", taskHandler.ListAssignees)
+	tasks.Put("/:id/archive", taskHandler.Archive)
+	tasks.Post("/:id/archive", taskHandler.Archive)
+	tasks.Put("/:id/restore", taskHandler.Restore)
+	tasks.Post("/:id/restore", taskHandler.Restore)
 	tasks.Get("/:id", taskHandler.GetByID)
 	tasks.Put("/:id", taskHandler.Update)
 	tasks.Delete("/:id", taskHandler.Delete)
@@ -79,6 +92,14 @@ func NewRouter(
 	comments := api.Group("/comments", authMiddleware)
 	comments.Put("/:id", commentHandler.Update)
 	comments.Delete("/:id", commentHandler.Delete)
+
+	taskLabels := api.Group("/task-labels", authMiddleware)
+	taskLabels.Put("/:id", taskMetadataHandler.UpdateLabel)
+	taskLabels.Delete("/:id", taskMetadataHandler.DeleteLabel)
+
+	taskAttachments := api.Group("/task-attachments", authMiddleware)
+	taskAttachments.Put("/:id", taskMetadataHandler.UpdateAttachment)
+	taskAttachments.Delete("/:id", taskMetadataHandler.DeleteAttachment)
 
 	notifications := api.Group("/notifications", authMiddleware)
 	notifications.Get("/", notificationHandler.List)

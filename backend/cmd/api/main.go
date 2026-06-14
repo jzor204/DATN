@@ -55,6 +55,8 @@ func main() {
 	commentRepo := repository.NewCommentRepository(db)
 	checklistRepo := repository.NewChecklistRepository(db)
 	checklistItemRepo := repository.NewChecklistItemRepository(db)
+	taskLabelRepo := repository.NewTaskLabelRepository(db)
+	taskAttachmentRepo := repository.NewTaskAttachmentRepository(db)
 	activityRepo := repository.NewActivityRepository(db)
 	changeRequestRepo := repository.NewTaskChangeRequestRepository(db)
 	notificationRepo := repository.NewNotificationRepository(db)
@@ -101,6 +103,14 @@ func main() {
 		cacheService,
 	)
 
+	taskMetadataUsecase := usecase.NewTaskMetadataUsecase(
+		taskLabelRepo,
+		taskAttachmentRepo,
+		taskRepo,
+		accessService,
+		cacheService,
+	)
+
 	activityUsecase := usecase.NewActivityUsecase(
 		activityRepo,
 		taskRepo,
@@ -128,6 +138,7 @@ func main() {
 	taskUsecase.SetActivityUsecase(activityUsecase)
 	commentUsecase.SetActivityUsecase(activityUsecase)
 	checklistItemUsecase.SetActivityUsecase(activityUsecase)
+	taskMetadataUsecase.SetActivityUsecase(activityUsecase)
 	changeRequestUsecase.SetActivityUsecase(activityUsecase)
 
 	authHandler := handler.NewAuthHandler(authUsecase)
@@ -135,6 +146,7 @@ func main() {
 	taskHandler := handler.NewTaskHandler(taskUsecase, projectUsecase, realtimeHub)
 	commentHandler := handler.NewCommentHandler(commentUsecase, taskUsecase, realtimeHub)
 	checklistItemHandler := handler.NewChecklistItemHandler(checklistItemUsecase, taskUsecase, realtimeHub)
+	taskMetadataHandler := handler.NewTaskMetadataHandler(taskMetadataUsecase, realtimeHub)
 	activityHandler := handler.NewActivityHandler(activityUsecase)
 	notificationHandler := handler.NewNotificationHandler(notificationUsecase)
 	changeRequestHandler := handler.NewChangeRequestHandler(changeRequestUsecase, realtimeHub)
@@ -146,6 +158,7 @@ func main() {
 		taskHandler,
 		commentHandler,
 		checklistItemHandler,
+		taskMetadataHandler,
 		activityHandler,
 		notificationHandler,
 		changeRequestHandler,

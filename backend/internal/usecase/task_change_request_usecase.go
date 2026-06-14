@@ -28,8 +28,10 @@ type CreateTaskChangeRequestInput struct {
 	Title       *string
 	Description *string
 	Status      *string
+	Priority    *string
 	AssigneeIDs OptionalUintSliceInput
 	Deadline    OptionalTimeInput
+	ReminderAt  OptionalTimeInput
 	Reason      string
 }
 
@@ -431,6 +433,16 @@ func (uc *TaskChangeRequestUsecase) buildRequestedChanges(
 		}
 	}
 
+	if input.Priority != nil {
+		priority := normalizeTaskPriority(*input.Priority)
+		if !isValidTaskPriority(priority) {
+			return nil, errors.New("invalid task priority")
+		}
+		if priority != task.Priority {
+			payload["priority"] = priority
+		}
+	}
+
 	if input.AssigneeIDs.Set {
 		assigneeIDs := normalizeAssigneeIDs(input.AssigneeIDs.Values)
 		if err := uc.validateAssignees(ctx, task.ProjectID, assigneeIDs); err != nil {
@@ -447,6 +459,23 @@ func (uc *TaskChangeRequestUsecase) buildRequestedChanges(
 				payload["deadline"] = nil
 			} else {
 				payload["deadline"] = input.Deadline.Value.UTC()
+			}
+		}
+	}
+
+	if input.ReminderAt.Set {
+		nextDeadline := task.Deadline
+		if input.Deadline.Set {
+			nextDeadline = input.Deadline.Value
+		}
+		if err := validateReminder(nextDeadline, input.ReminderAt.Value); err != nil {
+			return nil, err
+		}
+		if !sameTimePointer(input.ReminderAt.Value, task.ReminderAt) {
+			if input.ReminderAt.Value == nil {
+				payload["reminder_at"] = nil
+			} else {
+				payload["reminder_at"] = input.ReminderAt.Value.UTC()
 			}
 		}
 	}
@@ -800,10 +829,14 @@ func currentValuesForRequest(task *domain.Task, payload map[string]interface{}) 
 			current[key] = task.Description
 		case "status":
 			current[key] = task.Status
+		case "priority":
+			current[key] = task.Priority
 		case "assignee_ids":
 			current[key] = assigneeIDsFromTask(task)
 		case "deadline":
 			current[key] = task.Deadline
+		case "reminder_at":
+			current[key] = task.ReminderAt
 		}
 	}
 
@@ -896,6 +929,14 @@ func updateTaskInputFromPayload(raw string) (UpdateTaskInput, error) {
 		input.Status = &status
 	}
 
+	if value, ok := payload["priority"]; ok {
+		priority, ok := value.(string)
+		if !ok {
+			return input, errors.New("invalid requested priority")
+		}
+		input.Priority = &priority
+	}
+
 	if value, ok := payload["assignee_ids"]; ok {
 		assigneeIDs, err := uintSliceFromPayload(value)
 		if err != nil {
@@ -917,6 +958,19 @@ func updateTaskInputFromPayload(raw string) (UpdateTaskInput, error) {
 				return input, err
 			}
 			input.Deadline.Value = &deadline
+		}
+	}
+
+	if value, ok := payload["reminder_at"]; ok {
+		input.ReminderAt.Set = true
+		if value == nil {
+			input.ReminderAt.Value = nil
+		} else {
+			reminderAt, err := timeFromPayload(value)
+			if err != nil {
+				return input, err
+			}
+			input.ReminderAt.Value = &reminderAt
 		}
 	}
 

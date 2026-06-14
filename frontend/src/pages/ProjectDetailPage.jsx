@@ -8,12 +8,14 @@ import {
   updateProject
 } from "../api/projectApi";
 import { listChecklistsByTask } from "../api/checklistApi";
-import { createTask, listTasksByProject } from "../api/taskApi";
+import { createTask, listTaskAttachments, listTaskLabels, listTasksByProject } from "../api/taskApi";
 import AlertBanner from "../components/AlertBanner";
 import DeadlineBadge from "../components/DeadlineBadge";
 import EmptyState from "../components/EmptyState";
 import LoadingScreen from "../components/LoadingScreen";
 import Pagination from "../components/Pagination";
+import PriorityBadge from "../components/PriorityBadge";
+import ReminderBadge from "../components/ReminderBadge";
 import SectionCard from "../components/SectionCard";
 import StatusBadge from "../components/StatusBadge";
 import TaskModal from "../components/TaskModal";
@@ -45,7 +47,9 @@ const initialTaskForm = {
   title: "",
   description: "",
   assignee_id: "",
-  deadline: ""
+  deadline: "",
+  reminder_at: "",
+  priority: "none"
 };
 
 const initialTaskPagination = {
@@ -233,6 +237,30 @@ function getChecklistCount(checklists) {
   };
 }
 
+function normalizeListPayload(payload) {
+  return Array.isArray(payload) ? payload : payload?.data || [];
+}
+
+const labelToneMap = {
+  blue: "bg-blue-100 text-blue-700",
+  green: "bg-emerald-100 text-emerald-800",
+  yellow: "bg-amber-100 text-amber-800",
+  orange: "bg-orange-100 text-orange-800",
+  red: "bg-red-100 text-red-700",
+  purple: "bg-violet-100 text-violet-700",
+  pink: "bg-pink-100 text-pink-700",
+  sky: "bg-sky-100 text-sky-700",
+  slate: "bg-slate-100 text-slate-700"
+};
+
+function TaskLabelPill({ label }) {
+  return (
+    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${labelToneMap[label.color] || labelToneMap.blue}`}>
+      {label.name}
+    </span>
+  );
+}
+
 function RoleChip({ role }) {
   const tone =
     role === "owner"
@@ -272,8 +300,11 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
   const [taskStatusFilter, setTaskStatusFilter] = useState("all");
   const [taskAssigneeFilter, setTaskAssigneeFilter] = useState("all");
   const [taskDeadlineFilter, setTaskDeadlineFilter] = useState("all");
+  const [taskArchiveFilter, setTaskArchiveFilter] = useState("active");
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [taskChecklistCounts, setTaskChecklistCounts] = useState({});
+  const [taskLabelsById, setTaskLabelsById] = useState({});
+  const [taskAttachmentCounts, setTaskAttachmentCounts] = useState({});
   const [openAssigneePopover, setOpenAssigneePopover] = useState(null);
 
   const currentProjectMember = useMemo(
@@ -298,14 +329,18 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
       const assigneeText = assigneeIds
         .map((userId) => `${getMemberName(members, userId)} #${userId}`)
         .join(" ");
+      const labels = taskLabelsById[task.id] || [];
       const deadlineState = getDeadlineState(task.deadline, normalizedStatus);
       const searchableText = [
         task.title,
         task.description,
         task.status,
         formatTaskStatus(task.status),
+        task.priority,
         `${normalizeTaskProgress(task.progress)}%`,
         formatDeadline(task.deadline),
+        task.reminder_at,
+        labels.map((label) => label.name).join(" "),
         formatDeadlineState(deadlineState),
         assigneeText,
         assigneeIds.length > 0 ? assigneeIds.map((userId) => `#${userId}`).join(" ") : "chưa gán"
@@ -327,7 +362,7 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
 
       return matchesSearch && matchesStatus && matchesAssignee && matchesDeadline;
     });
-  }, [members, taskAssigneeFilter, taskDeadlineFilter, taskSearch, taskStatusFilter, tasks]);
+  }, [members, taskAssigneeFilter, taskDeadlineFilter, taskLabelsById, taskSearch, taskStatusFilter, tasks]);
 
   const groupedTasks = useMemo(() => {
     const groups = {
@@ -352,13 +387,15 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
     taskSearch.trim() !== "" ||
     taskStatusFilter !== "all" ||
     taskAssigneeFilter !== "all" ||
-    taskDeadlineFilter !== "all";
+    taskDeadlineFilter !== "all" ||
+    taskArchiveFilter !== "active";
 
   function resetTaskFilters() {
     setTaskSearch("");
     setTaskStatusFilter("all");
     setTaskAssigneeFilter("all");
     setTaskDeadlineFilter("all");
+    setTaskArchiveFilter("active");
   }
 
   function toggleAssigneePopover(taskId, userId) {
@@ -403,6 +440,38 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
     return Object.fromEntries(entries);
   }
 
+  async function loadTaskMetadataForTasks(taskItems) {
+    const entries = await Promise.all(
+      taskItems.map(async (task) => {
+        try {
+          const [labelPayload, attachmentPayload] = await Promise.all([
+            listTaskLabels(task.id),
+            listTaskAttachments(task.id)
+          ]);
+
+          return [
+            task.id,
+            {
+              labels: normalizeListPayload(labelPayload),
+              attachmentCount: normalizeListPayload(attachmentPayload).length
+            }
+          ];
+        } catch (err) {
+          return [task.id, { labels: [], attachmentCount: 0 }];
+        }
+      })
+    );
+
+    const labelsById = {};
+    const attachmentCounts = {};
+    for (const [taskId, metadata] of entries) {
+      labelsById[taskId] = metadata.labels;
+      attachmentCounts[taskId] = metadata.attachmentCount;
+    }
+
+    return { labelsById, attachmentCounts };
+  }
+
   useEffect(() => {
     let active = true;
 
@@ -414,10 +483,11 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
         const [projectPayload, memberPayload, taskPayload] = await Promise.all([
           getProject(projectId),
           listProjectMembers(projectId, 1, 100),
-          listTasksByProject(projectId, taskPage, 6)
+          listTasksByProject(projectId, taskPage, 6, { archive: taskArchiveFilter })
         ]);
         const tasksData = taskPayload.data || [];
         const checklistCounts = await loadChecklistCountsForTasks(tasksData);
+        const taskMetadata = await loadTaskMetadataForTasks(tasksData);
 
         if (!active) {
           return;
@@ -431,6 +501,8 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
         setMembers(memberPayload.data || []);
         setTasks(tasksData);
         setTaskChecklistCounts(checklistCounts);
+        setTaskLabelsById(taskMetadata.labelsById);
+        setTaskAttachmentCounts(taskMetadata.attachmentCounts);
         setTaskPagination(taskPayload.pagination || initialTaskPagination);
       } catch (err) {
         if (active) {
@@ -448,7 +520,7 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
     return () => {
       active = false;
     };
-  }, [projectId, taskPage]);
+  }, [projectId, taskArchiveFilter, taskPage]);
 
   async function reloadProjectOnly() {
     const payload = await getProject(projectId);
@@ -465,12 +537,15 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
   }
 
   async function reloadTasks(pageToLoad = taskPage) {
-    const payload = await listTasksByProject(projectId, pageToLoad, 6);
+    const payload = await listTasksByProject(projectId, pageToLoad, 6, { archive: taskArchiveFilter });
     const tasksData = payload.data || [];
     const checklistCounts = await loadChecklistCountsForTasks(tasksData);
+    const taskMetadata = await loadTaskMetadataForTasks(tasksData);
 
     setTasks(tasksData);
     setTaskChecklistCounts(checklistCounts);
+    setTaskLabelsById(taskMetadata.labelsById);
+    setTaskAttachmentCounts(taskMetadata.attachmentCounts);
     setTaskPagination(payload.pagination || initialTaskPagination);
   }
 
@@ -590,7 +665,8 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
       const assigneeId = toOptionalNumber(taskForm.assignee_id);
       const payload = {
         title: taskForm.title.trim(),
-        description: taskForm.description.trim()
+        description: taskForm.description.trim(),
+        priority: taskForm.priority
       };
 
       if (assigneeId) {
@@ -599,6 +675,10 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
 
       if (taskForm.deadline) {
         payload.deadline = toDeadlinePayload(taskForm.deadline);
+      }
+
+      if (taskForm.reminder_at) {
+        payload.reminder_at = toDeadlinePayload(taskForm.reminder_at);
       }
 
       await createTask(projectId, payload);
@@ -762,7 +842,7 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
       <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
         <div className="space-y-4">
           <SectionCard title="Lọc công việc" eyebrow="Task filter">
-            <div className="grid gap-3 xl:grid-cols-[1fr_170px_210px_180px_auto]">
+            <div className="grid gap-3 xl:grid-cols-[1fr_170px_210px_180px_170px_auto]">
               <input
                 className="rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 onChange={(event) => setTaskSearch(event.target.value)}
@@ -800,12 +880,25 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
                 onChange={(event) => setTaskDeadlineFilter(event.target.value)}
                 value={taskDeadlineFilter}
               >
-                <option value="all">Tất cả deadline</option>
-                <option value="active">Có deadline</option>
+                <option value="all">Tất cả hạn chót</option>
+                <option value="active">Có hạn chót</option>
                 <option value="overdue">Quá hạn</option>
                 <option value="today">Đến hạn hôm nay</option>
                 <option value="soon">Sắp đến hạn</option>
-                <option value="none">Chưa có deadline</option>
+                <option value="none">Chưa có hạn chót</option>
+              </select>
+
+              <select
+                className="rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                onChange={(event) => {
+                  setTaskArchiveFilter(event.target.value);
+                  setTaskPage(1);
+                }}
+                value={taskArchiveFilter}
+              >
+                <option value="active">Đang hoạt động</option>
+                <option value="archived">Đã lưu trữ</option>
+                <option value="all">Tất cả</option>
               </select>
 
               <button
@@ -862,7 +955,16 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
                       </button>
                       <div className="mt-3 flex flex-wrap items-center gap-2">
                         <StatusBadge status={task.status} />
+                        <PriorityBadge priority={task.priority} />
                         <DeadlineBadge deadline={task.deadline} status={normalizeStatus(task.status)} />
+                        {task.archived_at ? (
+                          <span className="inline-flex rounded-full bg-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                            Đã lưu trữ
+                          </span>
+                        ) : null}
+                        {task.reminder_at ? (
+                          <ReminderBadge deadline={task.deadline} reminderAt={task.reminder_at} />
+                        ) : null}
                         <TaskAssignees
                           members={members}
                           onTogglePopover={toggleAssigneePopover}
@@ -871,12 +973,26 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
                           task={task}
                         />
                       </div>
+                      {(taskLabelsById[task.id] || []).length > 0 ? (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {(taskLabelsById[task.id] || []).slice(0, 4).map((label) => (
+                            <TaskLabelPill key={label.id} label={label} />
+                          ))}
+                        </div>
+                      ) : null}
                       <div className="mt-3 space-y-1 text-xs text-slate-500">
                         <div className="flex items-center justify-between gap-2">
-                          <span>Deadline {formatDeadline(task.deadline)}</span>
-                          <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600">
-                            {taskChecklistCounts[task.id]?.done || 0}/{taskChecklistCounts[task.id]?.total || 0}
-                          </span>
+                          <span>Hạn chót {formatDeadline(task.deadline)}</span>
+                          <div className="flex shrink-0 gap-1">
+                            {taskAttachmentCounts[task.id] > 0 ? (
+                              <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600">
+                                File {taskAttachmentCounts[task.id]}
+                              </span>
+                            ) : null}
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600">
+                              {taskChecklistCounts[task.id]?.done || 0}/{taskChecklistCounts[task.id]?.total || 0}
+                            </span>
+                          </div>
                         </div>
                         <div>Cập nhật {formatDate(task.updated_at || task.created_at)}</div>
                       </div>
@@ -941,13 +1057,40 @@ export default function ProjectDetailPage({ currentUser, projectId }) {
               </label>
 
               <label className="block space-y-2">
-                <span className="text-sm font-semibold text-slate-700">Deadline</span>
+                <span className="text-sm font-semibold text-slate-700">Ưu tiên</span>
+                <select
+                  className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
+                  disabled={!canManageProject}
+                  onChange={(event) => setTaskForm((prev) => ({ ...prev, priority: event.target.value }))}
+                  value={taskForm.priority}
+                >
+                  <option value="none">Không ưu tiên</option>
+                  <option value="low">Thấp</option>
+                  <option value="medium">Trung bình</option>
+                  <option value="high">Cao</option>
+                  <option value="urgent">Khẩn cấp</option>
+                </select>
+              </label>
+
+              <label className="block space-y-2">
+                <span className="text-sm font-semibold text-slate-700">Hạn chót</span>
                 <input
                   className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
                   disabled={!canManageProject}
                   onChange={(event) => setTaskForm((prev) => ({ ...prev, deadline: event.target.value }))}
                   type="datetime-local"
                   value={taskForm.deadline}
+                />
+              </label>
+
+              <label className="block space-y-2">
+                <span className="text-sm font-semibold text-slate-700">Nhắc hạn</span>
+                <input
+                  className="w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
+                  disabled={!canManageProject}
+                  onChange={(event) => setTaskForm((prev) => ({ ...prev, reminder_at: event.target.value }))}
+                  type="datetime-local"
+                  value={taskForm.reminder_at}
                 />
               </label>
 
