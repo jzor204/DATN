@@ -1,0 +1,2 @@
+ALTER TABLE tasks
+    ADD COLUMN progress INT NOT NULL DEFAULT 0;

@@ -74,9 +74,9 @@ func (seedComment) TableName() string {
 func main() {
 	cfg := config.Load()
 
-	db, err := database.NewMySQL(cfg)
+	db, err := database.NewSQL(cfg)
 	if err != nil {
-		log.Fatalf("failed to connect mysql: %v", err)
+		log.Fatalf("failed to connect database: %v", err)
 	}
 
 	passwordService := utils.NewPasswordService()

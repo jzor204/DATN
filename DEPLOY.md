@@ -1,5 +1,7 @@
 # Deploy Task Management
 
+Neu muon deploy mien phi bang Render voi Postgres/Key Value, xem them `DEPLOY_RENDER.md`.
+
 Huong dan nay dung cho cach deploy don gian theo so do:
 
 - React/Vite build thanh static files.

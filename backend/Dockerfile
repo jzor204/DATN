@@ -8,6 +8,8 @@ RUN go mod download
 COPY . .
 
 RUN go build -o main ./cmd/api
+RUN go build -o migrate ./cmd/migrate
+RUN go build -o seed ./cmd/seed
 
 EXPOSE 8080
 

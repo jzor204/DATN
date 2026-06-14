@@ -11,6 +11,7 @@ package main
 
 import (
 	"log"
+	"net/url"
 	"strings"
 
 	docs "task-management/docs"
@@ -36,9 +37,9 @@ func main() {
 	docs.SwaggerInfo.BasePath = "/api/v1"
 	docs.SwaggerInfo.Schemes = swaggerSchemes(cfg)
 
-	db, err := database.NewMySQL(cfg)
+	db, err := database.NewSQL(cfg)
 	if err != nil {
-		log.Fatalf("failed to connect mysql: %v", err)
+		log.Fatalf("failed to connect database: %v", err)
 	}
 
 	redisClient, err := database.NewRedis(cfg)
@@ -176,8 +177,12 @@ func main() {
 }
 
 func swaggerHost(cfg *config.Config) string {
-	if strings.TrimSpace(cfg.SwaggerHost) != "" {
-		return strings.TrimSpace(cfg.SwaggerHost)
+	host := strings.TrimSpace(cfg.SwaggerHost)
+	if host != "" {
+		if parsedURL, err := url.Parse(host); err == nil && parsedURL.Host != "" {
+			return parsedURL.Host
+		}
+		return strings.TrimSuffix(host, "/")
 	}
 
 	return "localhost:" + cfg.AppPort

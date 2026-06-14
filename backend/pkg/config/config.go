@@ -16,12 +16,16 @@ type Config struct {
 	AppEnv  string
 	AppPort string
 
+	DBDriver    string
+	DatabaseURL string
+
 	MySQLHost     string
 	MySQLPort     string
 	MySQLUser     string
 	MySQLPassword string
 	MySQLDatabase string
 
+	RedisURL      string
 	RedisHost     string
 	RedisPort     string
 	RedisPassword string
@@ -37,10 +41,19 @@ type Config struct {
 func Load() *Config {
 	loadDotEnv()
 
+	databaseURL := getEnv("DATABASE_URL", "")
+	dbDriver := strings.ToLower(getEnv("DB_DRIVER", ""))
+	if dbDriver == "" {
+		dbDriver = inferDBDriver(databaseURL)
+	}
+
 	return &Config{
 		AppName: getEnv("APP_NAME", "task-management"),
 		AppEnv:  getEnv("APP_ENV", "development"),
-		AppPort: getEnv("APP_PORT", "8080"),
+		AppPort: getEnvAny("8080", "APP_PORT", "PORT"),
+
+		DBDriver:    dbDriver,
+		DatabaseURL: databaseURL,
 
 		MySQLHost:     getEnv("MYSQL_HOST", "127.0.0.1"),
 		MySQLPort:     getEnv("MYSQL_PORT", "3306"),
@@ -48,6 +61,7 @@ func Load() *Config {
 		MySQLPassword: getEnv("MYSQL_PASSWORD", "root"),
 		MySQLDatabase: getEnv("MYSQL_DATABASE", "task_management"),
 
+		RedisURL:      getEnv("REDIS_URL", ""),
 		RedisHost:     getEnv("REDIS_HOST", "127.0.0.1"),
 		RedisPort:     getEnv("REDIS_PORT", "6379"),
 		RedisPassword: getEnv("REDIS_PASSWORD", ""),
@@ -56,7 +70,7 @@ func Load() *Config {
 		JWTSecret:                 getEnv("JWT_SECRET", "super-secret-key"),
 		JWTAccessTokenExpireHours: getEnvAsInt("JWT_ACCESS_TOKEN_EXPIRE_HOURS", 24),
 
-		SwaggerHost:    getEnv("SWAGGER_HOST", ""),
+		SwaggerHost:    getEnvAny("", "SWAGGER_HOST", "RENDER_EXTERNAL_HOSTNAME", "RENDER_EXTERNAL_URL"),
 		SwaggerSchemes: getEnv("SWAGGER_SCHEMES", "http"),
 	}
 }
@@ -130,6 +144,16 @@ func getEnv(key string, fallback string) string {
 	return value
 }
 
+func getEnvAny(fallback string, keys ...string) string {
+	for _, key := range keys {
+		value := os.Getenv(key)
+		if value != "" {
+			return value
+		}
+	}
+	return fallback
+}
+
 func getEnvAsInt(key string, fallback int) int {
 	value := os.Getenv(key)
 	if value == "" {
@@ -142,4 +166,12 @@ func getEnvAsInt(key string, fallback int) int {
 	}
 
 	return number
+}
+
+func inferDBDriver(databaseURL string) string {
+	normalizedURL := strings.ToLower(strings.TrimSpace(databaseURL))
+	if strings.HasPrefix(normalizedURL, "postgres://") || strings.HasPrefix(normalizedURL, "postgresql://") {
+		return "postgres"
+	}
+	return "mysql"
 }

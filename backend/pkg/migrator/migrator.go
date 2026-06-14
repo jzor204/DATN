@@ -24,7 +24,8 @@ type Migration struct {
 }
 
 type Runner struct {
-	db *sql.DB
+	db      *sql.DB
+	dialect string
 }
 
 type StatusRow struct {
@@ -37,11 +38,18 @@ type StatusRow struct {
 var migrationFilePattern = regexp.MustCompile(`^(\d+)_(.+)\.up\.sql$`)
 
 func NewRunner(db *sql.DB) *Runner {
-	return &Runner{db: db}
+	return NewRunnerWithDialect(db, "mysql")
+}
+
+func NewRunnerWithDialect(db *sql.DB, dialect string) *Runner {
+	return &Runner{
+		db:      db,
+		dialect: normalizeDialect(dialect),
+	}
 }
 
 func (r *Runner) EnsureTable(ctx context.Context) error {
-	_, err := r.db.ExecContext(ctx, `
+	createTableSQL := `
 CREATE TABLE IF NOT EXISTS schema_migration_records (
     version VARCHAR(32) NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -49,7 +57,19 @@ CREATE TABLE IF NOT EXISTS schema_migration_records (
     applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (version)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-`)
+`
+	if r.dialect == "postgres" {
+		createTableSQL = `
+CREATE TABLE IF NOT EXISTS schema_migration_records (
+    version VARCHAR(32) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    checksum CHAR(64) NOT NULL,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+`
+	}
+
+	_, err := r.db.ExecContext(ctx, createTableSQL)
 	return err
 }
 
@@ -160,7 +180,7 @@ func (r *Runner) apply(ctx context.Context, migration Migration) error {
 
 	if _, err := tx.ExecContext(
 		ctx,
-		"INSERT INTO schema_migration_records (version, name, checksum) VALUES (?, ?, ?)",
+		r.insertMigrationSQL(),
 		migration.Version,
 		migration.Name,
 		migration.Checksum,
@@ -175,7 +195,7 @@ func (r *Runner) apply(ctx context.Context, migration Migration) error {
 func (r *Runner) record(ctx context.Context, migration Migration) error {
 	_, err := r.db.ExecContext(
 		ctx,
-		"INSERT INTO schema_migration_records (version, name, checksum) VALUES (?, ?, ?)",
+		r.insertMigrationSQL(),
 		migration.Version,
 		migration.Name,
 		migration.Checksum,
@@ -216,6 +236,22 @@ func (r *Runner) appliedRows(ctx context.Context) (map[string]StatusRow, error) 
 	}
 
 	return result, rows.Err()
+}
+
+func (r *Runner) insertMigrationSQL() string {
+	if r.dialect == "postgres" {
+		return "INSERT INTO schema_migration_records (version, name, checksum) VALUES ($1, $2, $3)"
+	}
+	return "INSERT INTO schema_migration_records (version, name, checksum) VALUES (?, ?, ?)"
+}
+
+func normalizeDialect(dialect string) string {
+	switch strings.ToLower(strings.TrimSpace(dialect)) {
+	case "postgres", "postgresql", "pg", "pgx":
+		return "postgres"
+	default:
+		return "mysql"
+	}
 }
 
 func Load(path string) ([]Migration, error) {

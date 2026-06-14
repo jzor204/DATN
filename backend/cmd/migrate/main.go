@@ -6,9 +6,11 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"task-management/pkg/config"
 	"task-management/pkg/migrator"
@@ -21,9 +23,10 @@ func main() {
 	flag.Parse()
 
 	cfg := config.Load()
-	db, err := sql.Open("mysql", dsn(cfg))
+	driver := sqlDriverName(cfg)
+	db, err := sql.Open(driver, dsn(cfg))
 	if err != nil {
-		log.Fatalf("open mysql: %v", err)
+		log.Fatalf("open database: %v", err)
 	}
 	defer db.Close()
 
@@ -31,10 +34,10 @@ func main() {
 	defer cancel()
 
 	if err := db.PingContext(ctx); err != nil {
-		log.Fatalf("ping mysql: %v", err)
+		log.Fatalf("ping database: %v", err)
 	}
 
-	runner := migrator.NewRunner(db)
+	runner := migrator.NewRunnerWithDialect(db, cfg.DBDriver)
 
 	switch {
 	case *status:
@@ -67,6 +70,10 @@ func main() {
 }
 
 func dsn(cfg *config.Config) string {
+	if isPostgres(cfg.DBDriver) {
+		return strings.TrimSpace(cfg.DatabaseURL)
+	}
+
 	return fmt.Sprintf(
 		"%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local&multiStatements=true",
 		cfg.MySQLUser,
@@ -75,4 +82,20 @@ func dsn(cfg *config.Config) string {
 		cfg.MySQLPort,
 		cfg.MySQLDatabase,
 	)
+}
+
+func sqlDriverName(cfg *config.Config) string {
+	if isPostgres(cfg.DBDriver) {
+		return "pgx"
+	}
+	return "mysql"
+}
+
+func isPostgres(driver string) bool {
+	switch strings.ToLower(strings.TrimSpace(driver)) {
+	case "postgres", "postgresql", "pg", "pgx":
+		return true
+	default:
+		return false
+	}
 }
